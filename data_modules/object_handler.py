@@ -43,6 +43,7 @@ keyin = Keypad(rows=keypad_rows, cols=keypad_cols)
 typer = Typer(keypad=keyin, keypad_map=keymap)
 
 chrs=Characters()
+builtins.chrs=chrs
 
 text=Textbuffer()
 menu=Menu()
