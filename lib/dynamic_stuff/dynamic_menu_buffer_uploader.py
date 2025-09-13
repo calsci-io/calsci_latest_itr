@@ -13,9 +13,14 @@ def refresh():
         if i in range(menu.menu_display_position,menu.menu_display_position+menu.rows):
             display.set_page_address(i-menu.menu_display_position)
             display.set_column_address(0)
+            # print("---key pressed---")
+            # print("display page address = ", i-menu.menu_display_position)
+            # print("menu item index = ", i)
+            # print("menu_display_pos = ", menu.menu_display_position)
+            # print("menu cursor = ", menu.cursor())
             menu_items_data[i]+=" "*(menu.cols-len(menu_items_data[i]))
             for j in menu_items_data[i]:
-                if i == menu.cursor():
+                if i-menu.menu_display_position == menu.cursor():
                     chtr_byte_data=chrs.invert_letter(j)
                     cursor_line=0b11111111
                     for k in chtr_byte_data:
