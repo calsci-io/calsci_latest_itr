@@ -2,6 +2,7 @@ import gc
 from sleeping_features import keypad_normal
 keypad_normal()
 import machine
+from bootup_configs import bootup
 opin = machine.Pin(14, machine.Pin.OUT, value=1, hold=False)  # Reinitialize the pin for deepsleep keypad
 # from test_thread import run_thread
 # opin.hold(False)
@@ -26,7 +27,9 @@ backlight_pin.on() #2.9
 # import uasyncio as asyncio
 # from test_async import main
 # asyncio.run(main())
+
 import builtins
+import _thread
 from data_modules.object_handler import text, menu, form, text_refresh, menu_refresh, form_refresh, typer, data_bucket
 builtins.display=display
 builtins.text=text
@@ -36,10 +39,10 @@ builtins.text_refresh=text_refresh
 builtins.text_refresh=menu_refresh
 builtins.text_refresh=form_refresh
 builtins.typer=typer
+_thread.start_new_thread(bootup, ())
+# from bootup_configs import bootup
 
-from bootup_configs import bootup
-
-bootup()
+# bootup()
 
 # import network
 # import time
