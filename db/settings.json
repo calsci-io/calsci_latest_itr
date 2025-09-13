@@ -1,1 +1,31 @@
-{"_default": {"1": {"value": 60000000, "feature": "sleep_timer"}}}
+{
+    "_default": {
+        "4": {
+            "value": false,
+            "feature": "dark_mode"
+        },
+        "6": {
+            "value": {
+                "app_name": "home",
+                "group_name": "root"
+            },
+            "feature": "default_app"
+        },
+        "1": {
+            "value": 60000000,
+            "feature": "sleep_timer"
+        },
+        "5": {
+            "value": true,
+            "feature": "auto_sleep"
+        },
+        "3": {
+            "value": false,
+            "feature": "backlight"
+        },
+        "2": {
+            "value": false,
+            "feature": "auto_wifi_connect"
+        }
+    }
+}

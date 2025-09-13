@@ -37,13 +37,15 @@ builtins.text_refresh=menu_refresh
 builtins.text_refresh=form_refresh
 builtins.typer=typer
 
+from bootup_configs import bootup
 
+bootup()
 
-import network
-import time
-import json
-import espnow
-import _thread
+# import network
+# import time
+# import json
+# import espnow
+# import _thread
 
 # sta_if = network.WLAN(network.STA_IF)
 # builtins.sta_if=sta_if
