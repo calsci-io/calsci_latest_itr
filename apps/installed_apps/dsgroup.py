@@ -16,8 +16,16 @@ from data_modules.object_handler import current_app
 # from process_modules import boot_up_data_update
 from data_modules.object_handler import app
 import _thread
+def single_fun():
+    data_generator()
+    uploader()
+    time.sleep(0.1)
+
 def dsgroup(db={}):
+    # _thread.start_new_thread(single_fun, ())
     global data_generator_status, new_upload
+    new_upload[0] = False
+    data_generator_status[0] = False
     display.clear_display()
     # json_file = "/db/application_modules_app_list.json" 
     # with open(json_file, "r") as file:
@@ -27,7 +35,7 @@ def dsgroup(db={}):
     # for apps in data:
     #     if apps["visibility"]:
     #         menu_list.append(apps["name"])
-    menu_list=["ab", "bc", "cd", "de", "ef", "fg", "gh", "hi", "ij", "jk", "kl"]
+    menu_list=["press ok", "random a", "random b", "random c", "random d", "random e", "random f", "random g", "random h", "random i", "random j"]
     menu.menu_list=menu_list
     menu.update()
     menu_refresh.refresh()
@@ -46,11 +54,18 @@ def dsgroup(db={}):
                 # app.set_group_name("root")
                 # break
                 # if new_upload == False or data_generator_status == False:
-                new_upload[0] = True
-                data_generator_status[0] = True
                 
-                _thread.start_new_thread(data_generator, ())
-                _thread.start_new_thread(uploader, ())
+                # new_upload[0] = True
+                # data_generator_status[0] = True
+                new_upload[0] = not new_upload[0]
+                data_generator_status[0] = not data_generator_status[0]
+                # print("switch status changed")
+                if new_upload[0] == True or data_generator_status[0] == True:
+
+                #     _thread.start_new_thread(single_fun, ())
+                #     print("starting the thread")
+                    _thread.start_new_thread(uploader, ())
+                    _thread.start_new_thread(data_generator, ())
             menu.update_buffer(inp)
             menu_refresh.refresh()
             time.sleep(0.2)
