@@ -41,4 +41,4 @@ def uploader():
         #     if i in range(menu.menu_display_position,menu.menu_display_position+menu.rows):
         #         pass
         refresh()
-        time.sleep(0.1)
+        time.sleep(0.5)
