@@ -14,6 +14,7 @@ def disconnect_network():
     data_bucket["ssid_g"] = ""
 
 def network_status(db={}):
+    time.sleep(0.2)
     display.clear_display()
 
     if data_bucket["connection_status_g"]:

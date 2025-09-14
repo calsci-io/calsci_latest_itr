@@ -20,11 +20,11 @@
             "feature": "auto_sleep"
         },
         "3": {
-            "value": false,
+            "value": true,
             "feature": "backlight"
         },
         "2": {
-            "value": false,
+            "value": true,
             "feature": "auto_wifi_connect"
         }
     }
