@@ -153,6 +153,8 @@ def wifi():
                 data_bucket["connection_status_g"]=False
         except Exception as e:
             print("WiFi setup skipped or failed:", e)
+    else:
+        print("auto wifi connect is off")
 
 
 def bootup():
