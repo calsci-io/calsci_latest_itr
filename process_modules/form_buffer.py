@@ -135,6 +135,8 @@ class Form:
         return self.input_cols
     
     def update(self):
+        # self.form_list=
+        #self.rows if len(self.form_list) >= self.rows else len(self.form_list)
         self.actual_rows=self.rows if len(self.form_list) >= self.rows else len(self.form_list)
         self.refresh_rows=(0,self.actual_rows)
         self.menu_display_size=self.actual_rows
