@@ -1,6 +1,12 @@
 from machine import Timer
 import time
 
+from tinydb import TinyDB, Query
+# Assuming the backlight is connected to a specific pin (e.g., Pin 15)
+# backlight_pin = Pin(19, Pin.OUT) #3.0
+# db = TinyDB('db/settings.json')
+# q=Query()
+
 class SoftWatchdog:
     def __init__(self, timeout_ms, callback, timer_id):
         self.timeout_ms = timeout_ms
@@ -12,7 +18,11 @@ class SoftWatchdog:
         self.timer.init(mode=Timer.ONE_SHOT, period=self.timeout_ms, callback=self._timeout)
 
     def _timeout(self, t):
-        if self.callback:
+        db = TinyDB('db/settings.json')
+        q=Query()
+        print("time up")
+        print("auto_sleep = ", db.search(q.feature=="auto_sleep")[0]["value"])
+        if self.callback and db.search(q.feature=="auto_sleep")[0]["value"] == True:
             self.callback()
 
     def feed(self):

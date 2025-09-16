@@ -58,5 +58,15 @@
         "name": "wifi_autoconnect",
         "folder": "settings",
         "visibility": true
+    },
+    {
+        "name": "auto_sleep",
+        "folder": "settings",
+        "visibility": true
+    },
+    {
+        "name": "battery_status",
+        "folder": "settings",
+        "visibility": true
     }
 ]
