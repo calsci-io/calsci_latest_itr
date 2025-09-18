@@ -94,7 +94,7 @@ def auto_sleep():
                     form.form_list.append("updated successfully")
                     form.update()
                     form_refresh.refresh()
-                    # print("update form refresh", form.form_list, form.actual_rows)
+                    print("update form refresh", form.form_list, form.actual_rows)
                 elif int(tm)>14400:
                     display.clear_display()
                     form.input_list={"inp_0": str(int(db.search(q.feature=="sleep_timer")[0]["value"]/60000))}
@@ -109,7 +109,7 @@ def auto_sleep():
                 form.form_list.append("wrong input")
                 form.update()
                 form_refresh.refresh()
-                # print(form.form_list, form.actual_rows)
+                print(form.form_list, form.actual_rows)
         
         elif inp == "alpha" or inp == "beta":
             keypad_state_manager(x=inp)
@@ -121,6 +121,6 @@ def auto_sleep():
             #     form.update()
             #     form_refresh.refresh()
         form_refresh.refresh(state=nav.current_state())
-        # print("last form refresh", form.form_list, form.actual_rows)
+        print("last form refresh", form.form_list, form.actual_rows)
     
         time.sleep(0.2)

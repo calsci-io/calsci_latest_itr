@@ -4,6 +4,10 @@ from data_modules.object_handler import app
 import gc
 import time
 from sleeping_features import get_sleep_time, update_sleep_time
+# def search(term):
+
+# url = "http://67e91d51e7f4f94a1ce3.appwrite.global/search_molecule"
+# headers = {"molecule": "glucose"}
 
 def sleep_after(db={}):
     print("start of sleep_after", gc.mem_free())
@@ -17,6 +21,7 @@ def sleep_after(db={}):
     while True:
         inp = typer.start_typing()
         if inp == "back":
+            # del buffer1, fb1
             app.set_app_name("settings")
             app.set_group_name("root")
             break
@@ -38,6 +43,21 @@ def sleep_after(db={}):
                 form.form_list=["sleep after minutes:", "inp_0", "wrong input"]
                 form.update()
                 form_refresh.refresh()
+            # form.form_list=["enter compound: ", "inp_0", "loading..."]
+            # form.update()
+            # form_refresh.refresh()
+            # molecule=form.inp_list()["inp_0"]
+            # url = "http://67e91d51e7f4f94a1ce3.appwrite.global/search_molecule"
+            # headers = {"molecule": molecule}
+            # try:
+            #     response = urequests.get(url, headers=headers).text
+            # except:
+            #     response = "connect to internet"
+            # print(response)
+            # display.clear_display()
+            # form.form_list=["enter compound: ", "inp_0", response]
+            # form.update()
+            # form_refresh.refresh()
         elif inp == "alpha" or inp == "beta":
             keypad_state_manager(x=inp)
             form.update_buffer("")
