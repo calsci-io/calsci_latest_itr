@@ -19,6 +19,10 @@
         "5": {
             "app_name": "dynamic_form",
             "group_name": "installed_apps"
+        },
+        "6": {
+            "app_name": "slave_connector",
+            "group_name": "installed_apps"
         }
     }
 }

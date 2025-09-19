@@ -23,9 +23,19 @@ from process_modules.app import App
 
 from process_modules.app_downloader import Apps
 
-import esp32
-import time
-
+# import esp32
+# import time
+import network
+import espnow
+sta_if=network.WLAN(network.STA_IF)
+ap_if=network.WLAN(network.AP_IF)
+sta_if.active(True)
+ap_if.active(True)
+sta_if.config(hostname="CalSci")
+ap_if.config(ssid="CalSci")
+sta_if.active(False)
+ap_if.active(False)
+e = espnow.ESPNow()
 current_app=["home", ""]
 data_bucket={"ssid_g" : "", "connection_status_g" : False}
 # keypad_rows=[26, 25, 33, 32, 35, 34, 39, 36] #3.0
@@ -51,6 +61,8 @@ form=Form()
 builtins.text=text
 builtins.menu=menu
 builtins.form=form
+
+builtins.typer=typer
 
 nav = Nav(disp_out=display, chrs=chrs)
 builtins.nav=nav

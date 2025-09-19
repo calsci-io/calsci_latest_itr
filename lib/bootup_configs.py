@@ -89,11 +89,12 @@ def darkmode():
 def wifi():
     auto=db.search(q.feature=="auto_wifi_connect")
     if auto[0]["value"]==True:
-        import network
+        from data_modules.object_handler import sta_if
+        # import network
         import time
         import json
         from data_modules.object_handler import data_bucket
-        sta_if = network.WLAN(network.STA_IF)
+        # sta_if = network.WLAN(network.STA_IF)
         # builtins.sta_if=sta_if
         # sta_if.active(False)
         # time.sleep(0.5)
