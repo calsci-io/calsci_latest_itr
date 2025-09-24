@@ -1,8 +1,8 @@
 #!/bin/bash
 # Recursive downloader using ampy (duplicate path bug fixed)
 
-PORT="/dev/ttyACM1"
-BACKUP_DIR="./esp32_backup"
+PORT="/dev/ttyACM0"
+BACKUP_DIR="./"
 
 normalize_remote() {
     # Ensure leading / and collapse multiple slashes

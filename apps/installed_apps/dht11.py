@@ -3,15 +3,16 @@ from data_modules.object_handler import nav, keypad_state_manager, typer, keymap
 from data_modules.object_handler import current_app
 from process_modules import boot_up_data_update
 from data_modules.object_handler import app
-from hcsr04 import HCSR04
-
+# from hcsr04 import HCSR04
+import dht
+import machine
 from dynamic_stuff.dynamic_switches import *
 # from dynamic_stuff.dynamic_switches import data_generator_status
 from dynamic_stuff.dynamic_data import menu_items_data
 from dynamic_stuff.dynamic_menu_buffer_uploader import uploader
 import time
 import _thread
-sensor = HCSR04(trigger_pin=16, echo_pin=2)
+sensor = dht.DHT11(machine.Pin(43))
 
 # def dist_measure(sensor):
 #     try:
@@ -25,9 +26,14 @@ def get_data(sensor=sensor):
     # a=random.randint(1,99)
     # b=random.randint(1000,5000)
     # c=[a,b]
+    sensor.measure()
+    t=sensor.temperature()
+    h=sensor.humidity()
     c={
-        0:"Distance in cm:",
-        1:"=> "+str(sensor.distance_cm())
+        0:"temperature in celcius:",
+        1:"=> "+str(t),
+        2:"humidity in %:",
+        3:"=> "+str(h)
     }
     return c
 
@@ -43,12 +49,12 @@ def data_generator():
             menu.menu_list[i]=menu_items_data[i]
         time.sleep(0.1)
 
-def ultra_sonic_sensor(db={}):
+def dht11(db={}):
     new_upload[0] = False
     data_generator_status[0] = False
     # sensor = HCSR04(trigger_pin=16, echo_pin=2)
     display.clear_display()
-    menu_list=["distance:", "=> "]
+    menu_list=["temperature in celcius:", "=> ",  "humidity in %:", "=> "]
     menu.menu_list=menu_list
     menu.update()
     menu_refresh.refresh()

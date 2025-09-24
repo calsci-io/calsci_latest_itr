@@ -23,6 +23,10 @@
         "6": {
             "app_name": "slave_connector",
             "group_name": "installed_apps"
+        },
+        "7": {
+            "app_name": "dht11",
+            "group_name": "installed_apps"
         }
     }
 }
