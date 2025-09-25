@@ -320,10 +320,10 @@ def plot_function(fb, func, exp_str, x_min, x_max, y_min, y_max, width, height):
     draw_small_text(fb, "x_max", 108, 33) # Below x-axis right
     draw_small_text(fb, "y_min", 65, 50)  # Below y-axis bottom
     draw_small_text(fb, "y_max", 65, 0)   # Above y-axis top
-    fb.text("x= ", 0, 56, 1)             # display current x value at which the cursor is placed
-    fb.text("y= ", 64, 56, 1)            # display current y value at which the cursor is placed
+    # fb.text("x= ", 0, 56, 1)             # display current x value at which the cursor is placed
+    # fb.text("y= ", 64, 56, 1)            # display current y value at which the cursor is placed
     
-    height -= 8
+    height -= 0
 
     # Loop through each x pixel
     for x_pixel in range(width):
