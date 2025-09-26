@@ -1,6 +1,6 @@
 class Textbuffer:
     def __init__(self, text_buffer="𖤓", rows=7, cols=21):
-        if text_buffer != "𖤓":
+        if text_buffer != "𖤓": # flower character
             text_buffer += "𖤓"
         self.text_buffer = text_buffer
         self.menu_buffer_size = len(self.text_buffer)
@@ -76,12 +76,16 @@ class Textbuffer:
                 self.menu_buffer_cursor += self.cols
             else:
                 self.menu_buffer_cursor += 1
+
+            # TODO: Better names for this  
+            past_coords =(past_buffer_cursor - self.display_buffer_position) 
+            coords = (self.menu_buffer_cursor - self.display_buffer_position)
+            past_buffer_cal = (past_coords // self.cols) * self.cols
+            current_buffer_cal = ( coords // self.cols) * self.cols
             self.refresh_area = (
-                (past_buffer_cursor - self.display_buffer_position) % self.cols
-                + ((past_buffer_cursor - self.display_buffer_position) // self.cols)
-                * self.cols,
-                ((self.menu_buffer_cursor - self.display_buffer_position) // self.cols)
-                * self.cols
+                past_coords % self.cols
+                + past_buffer_cal,
+                current_buffer_cal 
                 + self.cols,
             )
 
@@ -99,26 +103,26 @@ class Textbuffer:
                 self.menu_buffer_cursor -= self.cols
             else:
                 self.menu_buffer_cursor -= 1
+            
+            coords = (self.menu_buffer_cursor - self.display_buffer_position)
             if text == "nav_b":
+                buffer_cal = (
+                       coords // self.cols
+                    ) * self.cols
                 self.refresh_area = (
-                    (self.menu_buffer_cursor - self.display_buffer_position) % self.cols
-                    + (
-                        (self.menu_buffer_cursor - self.display_buffer_position)
-                        // self.cols
-                    )
-                    * self.cols,
+                    coords % self.cols
+                    + buffer_cal,
                     self.rows * self.cols,
                 )
             else:
+                current_buffer_cal = (
+                       coords // self.cols
+                    ) * self.cols
+                past_buffer_cal = ((past_buffer_cursor - self.display_buffer_position) // self.cols) * self.cols
                 self.refresh_area = (
-                    (self.menu_buffer_cursor - self.display_buffer_position) % self.cols
-                    + (
-                        (self.menu_buffer_cursor - self.display_buffer_position)
-                        // self.cols
-                    )
-                    * self.cols,
-                    ((past_buffer_cursor - self.display_buffer_position) // self.cols)
-                    * self.cols
+                    coords % self.cols
+                    + buffer_cal,
+                    past_buffer_cal 
                     + self.cols,
                 )
 
