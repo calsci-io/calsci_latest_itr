@@ -14,7 +14,7 @@ from input_modules.keypad import Keypad
 from data_modules.keypad_map import Keypad_5X8
 
 # from output_modules.st7565_spi import Display
-import st7565 as display
+# import st7565 as display
 from data_modules.characters import Characters
 
 from process_modules.navbar import Nav
@@ -45,9 +45,11 @@ keypad_cols=[8, 18, 17, 15, 7] #2.9
 # st7565_display_pins={"cs1":2, "rs":16, "rst":4, "sda":5, "sck":17}  #3.0
 st7565_display_pins={"cs1":9, "rs":10, "rst":11, "sda":12, "sck":13} #2.9
 # display.init(st7565_display_pins["cs1"], st7565_display_pins["rs"], st7565_display_pins["rst"], st7565_display_pins["sda"], st7565_display_pins["sck"])
-display.init(9, 11, 10, 13, 12)
+# display.init(9, 11, 10, 13, 12)
+display=display
 # display.write_instruction(0x81) #for only 3.0
-# display.write_instruction(0x06)
+# display.write_instruction(9)
+# import display
 keymap = Keypad_5X8()
 keyin = Keypad(rows=keypad_rows, cols=keypad_cols)
 typer = Typer(keypad=keyin, keypad_map=keymap)

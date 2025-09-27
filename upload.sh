@@ -1,5 +1,5 @@
 
-PORT="/dev/ttyACM0"
+PORT="/dev/ttyACM1"
 
 echo ""
 echo "Items present locally (excluding .git, hidden files, and *.pyc):"

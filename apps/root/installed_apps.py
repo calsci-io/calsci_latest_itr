@@ -9,20 +9,8 @@ from data_modules.object_handler import apps_installer
 
 def installed_apps():
     time.sleep(0.1)
-    # apps_installer=Apps()
     display.clear_display()
-    # json_file = "/db/installed_apps.json"
-    # with open(json_file, "r") as file:
-    #     data = json.load(file)
-    
-    # app_list = apps.get_group_apps()
-    
-
-    # for apps in data:
-    #     if apps["visibility"]:
-    #         app_list.append(apps["name"])
     menu_list = apps_installer.get_group_apps()
-    # print(menu_list)
     menu.menu_list=menu_list
     menu.update()
     menu_refresh.refresh()
@@ -30,8 +18,6 @@ def installed_apps():
         while True:
             inp = typer.start_typing()
             if inp == "back":
-                # current_app[0] = "home"
-                # current_app[1]="application_modules"
                 app.set_app_name("home")
                 app.set_group_name("root")
                 break
@@ -42,7 +28,6 @@ def installed_apps():
                 boot_up_data_update.main()
                 machine.deepsleep()
             elif inp =="ok":
-                # current_app[0]=menu.menu_list[menu.menu_cursor]
                 app.set_app_name(menu.menu_list[menu.menu_cursor])
                 app.set_group_name("installed_apps")
                 break
