@@ -15,6 +15,10 @@
         "4": {
             "app_name": "dsgroup",
             "group_name": "installed_apps"
+        },
+        "5": {
+            "app_name": "test_app",
+            "group_name": "installed_apps"
         }
     }
 }
