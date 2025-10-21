@@ -7,7 +7,7 @@ from process_modules import boot_up_data_update
 # from test_async import main, cancel_task
 # asyncio.run(main())
 # from 
-from test_thread import run_espnow_message, end_espnow_task
+# from test_thread import run_espnow_message, end_espnow_task
 task=None
 def calculate():
     global task
@@ -28,14 +28,14 @@ def calculate():
 
             if x == "ok" and task == None:
                 # asyncio.run(main())
-                run_espnow_message()
+                # run_espnow_message()
                 task=1
                 # task=asyncio.create_task(read_gpio())
 
 
             elif x == "ok" and task != None:
                 # asyncio.run(cancel_task())
-                end_espnow_task()
+                # end_espnow_task()
                 task=None
 
             if x == "ans" and text.text_buffer[0] != "𖤓":

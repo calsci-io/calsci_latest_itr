@@ -26,7 +26,7 @@ def mac_address():
     #         settins_list.append(apps["name"])
 
     # menu.menu_list=screens[operation_no]
-    menu.menu_list=["mac address:", mac_str]
+    menu.menu_list=["mac address:", mac_str, str(machine.unique_id())]
     menu.update()
     menu_refresh.refresh()
     try:
