@@ -1,5 +1,5 @@
 import machine
-# import time
+import time
 import esp32
 from tinydb import TinyDB, Query
 from soft_watch_dog_timer import SoftWatchdog
@@ -17,6 +17,9 @@ def test_deep_sleep_awake():
     wakeup_pin = machine.Pin(8, mode=machine.Pin.IN, pull=machine.Pin.PULL_DOWN)
     esp32.wake_on_ext0(pin=wakeup_pin, level=esp32.WAKEUP_ANY_HIGH)
     esp32.gpio_deep_sleep_hold(True)
+    time.sleep(0.2)
+    display.clear_display()
+    display.off()
     machine.deepsleep()
 
 swdt=SoftWatchdog(timeout_ms=get_sleep_time(), callback=test_deep_sleep_awake, timer_id=1)
