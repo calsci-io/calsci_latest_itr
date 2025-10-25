@@ -17,8 +17,13 @@ class Typer:
                 # display.off()
                 test_deep_sleep_awake()
             return text
-        except:
+        except KeyboardInterrupt:
             swdt.stop()
             print("soft watchdog timer stopped")
+            raise  # Let REPL get it!
+        # except Exception as e:
+        #     swdt.stop()
+        #     print("soft watchdog timer stopped", e)
+        #     return 0
 
 
