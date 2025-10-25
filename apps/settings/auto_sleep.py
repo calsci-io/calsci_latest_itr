@@ -83,7 +83,7 @@ def auto_sleep():
         elif inp == "ok" and db.search(q.feature=="auto_sleep")[0]["value"] == True and form.menu_cursor != 0:
             tm=form.inp_list()["inp_0"]
             try:
-                if int(tm)<=14400:
+                if int(tm)<=14400 and int(tm)>=1:
                     # update_sleep_time(int(tm)*60000)
                     db.update({'value':int(tm)*60000}, q.feature == 'sleep_timer')
                     swdt.update_time(timeout_ms=int(tm)*60000)
@@ -100,6 +100,13 @@ def auto_sleep():
                     form.input_list={"inp_0": str(int(db.search(q.feature=="sleep_timer")[0]["value"]/60000))}
                     # form.form_list=["autosleep: ON","sleep after minutes:", "inp_0", "maximum is 14400"]
                     form.form_list.append("maximum is 14400")
+                    form.update()
+                    form_refresh.refresh()
+                elif int(tm)<1:
+                    display.clear_display()
+                    form.input_list={"inp_0": str(int(db.search(q.feature=="sleep_timer")[0]["value"]/60000))}
+                    # form.form_list=["autosleep: ON","sleep after minutes:", "inp_0", "maximum is 14400"]
+                    form.form_list.append("minimum is 1")
                     form.update()
                     form_refresh.refresh()
             except:
