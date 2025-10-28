@@ -1,7 +1,7 @@
 from tinydb import TinyDB, Query
 db = TinyDB('db/settings.json')
 q=Query()
-
+from machine import Pin
 def backlight():
     backlight_status=db.search(q.feature=="backlight")
     if backlight_status[0]["value"] == False:
@@ -157,8 +157,19 @@ def wifi():
     else:
         print("auto wifi connect is off")
 
+def default_pins_state():
+    i1=Pin(44, Pin.OUT, value=0)
+    i2=Pin(43, Pin.OUT, value=0)
+    i3=Pin(2, Pin.OUT, value=0)
+    i4=Pin(16, Pin.OUT, value=0)
+    # i1.off()
+    # i2.off()
+    # i3.off()
+    # i4.off()
+
 
 def bootup():
+    default_pins_state()
     backlight()
     darkmode()
     wifi()

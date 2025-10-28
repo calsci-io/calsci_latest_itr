@@ -31,6 +31,10 @@
         "8": {
             "app_name": "data_reciever",
             "group_name": "installed_apps"
+        },
+        "9": {
+            "app_name": "rgb",
+            "group_name": "installed_apps"
         }
     }
 }

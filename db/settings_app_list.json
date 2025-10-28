@@ -50,11 +50,6 @@
         "visibility": true
     },
     {
-        "name": "sleep_after",
-        "folder": "settings",
-        "visibility": true
-    },
-    {
         "name": "wifi_autoconnect",
         "folder": "settings",
         "visibility": true
