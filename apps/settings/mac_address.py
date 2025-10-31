@@ -67,6 +67,6 @@ def mac_address():
                 # menu_refresh.refresh()
             menu.update_buffer(inp_menu)
             menu_refresh.refresh(state=nav.current_state())
-            time.sleep(0.1)
+            # time.sleep(0.1)
     except Exception as e:
         print(f"Error: {e}")

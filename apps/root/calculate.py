@@ -1,4 +1,4 @@
-import utime as time  # type:ignore
+# import utime as time  # type:ignore
 from math import *
 import machine
 from data_modules.object_handler import display, text, nav, text_refresh, typer, keypad_state_manager, keypad_state_manager_reset, current_app, app
@@ -63,7 +63,7 @@ def calculate():
                 text.all_clear()
 
             text_refresh.refresh(state=nav.current_state())
-            time.sleep(0.2)
+            # time.sleep(0.2)
 
     except Exception as e:
         print(f"Error: {e}")

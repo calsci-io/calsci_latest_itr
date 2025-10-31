@@ -9,7 +9,7 @@ from dynamic_stuff.dynamic_switches import *
 # from dynamic_stuff.dynamic_switches import data_generator_status
 from dynamic_stuff.dynamic_data import menu_items_data
 from dynamic_stuff.dynamic_menu_buffer_uploader import uploader
-import time
+# import time
 import _thread
 sensor = HCSR04(trigger_pin=16, echo_pin=2)
 
@@ -80,6 +80,6 @@ def ultra_sonic_sensor(db={}):
                     _thread.start_new_thread(data_generator, ())
             menu.update_buffer(inp)
             menu_refresh.refresh(state=nav.current_state())
-            time.sleep(0.2)
+            # time.sleep(0.2)
     except Exception as e:
         print(f"Error: {e}")

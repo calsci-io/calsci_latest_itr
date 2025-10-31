@@ -292,7 +292,7 @@ def graph(db={}):
             form.update_buffer(inp)
         form_refresh.refresh(state=nav.current_state())
     
-        time.sleep(0.1)
+        # time.sleep(0.1)
     print("end of graph", gc.mem_free())
 
 def plot_function(fb, func, exp_str, x_min, x_max, y_min, y_max, width, height):

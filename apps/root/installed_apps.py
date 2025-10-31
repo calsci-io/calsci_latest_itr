@@ -1,4 +1,4 @@
-import time
+# import time
 # import json
 import machine
 from data_modules.object_handler import nav, keypad_state_manager, menu, menu_refresh, typer, keymap, display, app
@@ -8,7 +8,7 @@ from process_modules.app_downloader import Apps
 from data_modules.object_handler import apps_installer
 
 def installed_apps():
-    time.sleep(0.1)
+    # time.sleep(0.1)
     display.clear_display()
     menu_list = apps_installer.get_group_apps()
     menu.menu_list=menu_list
@@ -33,6 +33,6 @@ def installed_apps():
                 break
             menu.update_buffer(inp)
             menu_refresh.refresh(state=nav.current_state())
-            time.sleep(0.2)
+            # time.sleep(0.2)
     except Exception as e:
         print(f"Error: {e}")

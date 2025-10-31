@@ -42,7 +42,7 @@ def wifi_app(db={}):
             machine.deepsleep()
         menu.update_buffer(inp)
         menu_refresh.refresh(state=nav.current_state())
-        time.sleep(0.1)
+        # time.sleep(0.1)
 
 def scan_networks():
     network_names = []

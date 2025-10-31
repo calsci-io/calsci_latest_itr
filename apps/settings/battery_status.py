@@ -148,6 +148,6 @@ def battery_status():
                     _thread.start_new_thread(data_generator, ())
             menu.update_buffer(inp)
             menu_refresh.refresh()
-            time.sleep(0.2)
+            # time.sleep(0.2)
     except Exception as e:
         print(f"Error: {e}")

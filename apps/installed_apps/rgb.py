@@ -1,4 +1,4 @@
-import time
+# import time
 from machine import Pin, PWM
 from data_modules.object_handler import nav, keypad_state_manager, app
 
@@ -110,7 +110,7 @@ def rgb():
 
             menu.update_buffer(inp)
             menu_refresh.refresh(state=nav.current_state())
-            time.sleep(0.2)
+            # time.sleep(0.2)
 
     except Exception as e:
         print(f"Error: {e}")

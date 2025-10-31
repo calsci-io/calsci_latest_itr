@@ -130,4 +130,4 @@ def auto_sleep():
         form_refresh.refresh(state=nav.current_state())
         print("last form refresh", form.form_list, form.actual_rows)
     
-        time.sleep(0.2)
+        # time.sleep(0.2)

@@ -1,4 +1,4 @@
-import time
+# import time
 import json
 import machine
 from data_modules.object_handler import current_app, nav, keypad_state_manager, menu, menu_refresh, typer, keymap, display
@@ -52,6 +52,6 @@ def set():
                 break
             menu.update_buffer(inp_menu)
             menu_refresh.refresh(state=nav.current_state())
-            time.sleep(0.1)
+            # time.sleep(0.1)
     except Exception as e:
         print(f"Error: {e}")

@@ -100,6 +100,7 @@ def keypad_state_manager_reset():
     keymap.key_change(state="d")
     nav.state_change(state="d")
 
+
 # def test_deep_sleep_awake():
 #     # -------- Hold GPIO32 HIGH --------
 #     hold_pin = machine.Pin(32, machine.Pin.OUT)

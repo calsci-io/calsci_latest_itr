@@ -1,4 +1,4 @@
-import time
+# import time
 from data_modules.object_handler import keypad_state_manager, sta_if
 from data_modules.object_handler import app
 import _thread
@@ -60,6 +60,6 @@ def slave_connector():
                 pass
             menu.update_buffer(inp_menu)
             menu_refresh.refresh(state=nav.current_state())
-            time.sleep(0.2)
+            # time.sleep(0.2)
     except Exception as e:
         print(f"Error: {e}")

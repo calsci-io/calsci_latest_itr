@@ -102,6 +102,6 @@ def dynamic_form(db={}):
             # form.refresh_rows=(0,form.actual_rows)
             # print("ref_ar", form.ref_ar())
             form_refresh.refresh(state=nav.current_state())
-            time.sleep(0.2)
+            # time.sleep(0.2)
     except Exception as e:
         print(f"Error: {e}")
