@@ -35,6 +35,10 @@
         "9": {
             "app_name": "rgb",
             "group_name": "installed_apps"
+        },
+        "10": {
+            "app_name": "temp_sensor",
+            "group_name": "installed_apps"
         }
     }
 }

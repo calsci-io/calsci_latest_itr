@@ -6,9 +6,9 @@ def rgb():
     display.clear_display()
 
     # Initialize RGB PWM channels
-    r = PWM(Pin(43), duty=0, freq=10)
-    g = PWM(Pin(2), duty=0, freq=10)
-    b = PWM(Pin(44), duty=0, freq=10)
+    r = PWM(Pin(43), duty=0, freq=1000)
+    g = PWM(Pin(2), duty=0, freq=1000)
+    b = PWM(Pin(44), duty=0, freq=1000)
 
     menu.menu_list = [
         "RGB - (43,2,44)",
