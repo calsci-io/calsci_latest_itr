@@ -270,7 +270,8 @@ def data_generator():
             payload = ujson.dumps(payload)
             # client.publish(config.TOPIC_UP, payload)
         else:
-            payload = build_payload()
+            # payload = build_payload()
+            continue
         client.publish(config.TOPIC_UP, payload)
         # print(">> TO AWS:", payload)
         # client.check_msg()  # check if any DOWN messages arrived
@@ -291,7 +292,7 @@ def data_generator():
         for i in menu_items_data:
             menu.menu_list[i]=menu_items_data[i]
         counter+=1
-        time.sleep(0.1)
+        time.sleep(1)
 
 def temp_sensor():
     ntptime.settime()

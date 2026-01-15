@@ -5,22 +5,7 @@ from data_modules.object_handler import current_app
 from process_modules import boot_up_data_update
 from data_modules.object_handler import app
 from machine import Pin, ADC, deepsleep, reset
-# adc_pin = Pin(6)
-# adc = ADC(adc_pin)
-# adc.atten(ADC.ATTN_11DB)
-# adc.width(ADC.WIDTH_12BIT)
 
-# charge_pin=Pin(4, Pin.IN, Pin.PULL_DOWN)
-# from sleeping_features import test_deep_sleep_awake
-
-"""
-things to be made:
-1. dynamic menu buffer uploader in thread
-2. dynamic menu buffer data generator
-3. dynamic global switch which is turned on by data generator and turned off by uploader
-4. a switch for turning on the data generator on or off
-5. if a function is given to the data generator then it will stay on or it will turn off
-"""
 from dynamic_stuff.dynamic_switches import *
 from dynamic_stuff.dynamic_menu_buffer_uploader import uploader
 # from dynamic_stuff.dynamic_menu_buffer_data_generator import data_generator

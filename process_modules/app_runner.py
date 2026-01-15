@@ -3,7 +3,7 @@ from data_modules.object_handler import app
 def app_runner():
     # name=app.get_app_name()
     # group=app.get_group_name()
-
+    # text_refresh.new=True
     if (app.get_app_name() == None) or (app.get_group_name() == None):
         app.set_app_name("home")
         app.set_group_name("root")

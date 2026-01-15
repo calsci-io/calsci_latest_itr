@@ -21,6 +21,7 @@ class Textbuffer:
         self.refresh_area = (0, self.rows * self.cols)
         self.buffer()
         self.update_buffer("")
+        self.ac=False
 
     def buffer(self):
 
@@ -68,6 +69,7 @@ class Textbuffer:
         return new_rows_list
 
     def update_buffer(self, text):
+        self.ac=False
         self.refresh_area = (0, self.rows * self.cols)
         past_buffer_cursor = self.menu_buffer_cursor
         txt_buf_size = self.menu_buffer[-1] + 1
@@ -187,6 +189,8 @@ class Textbuffer:
         self.menu_buffer_cursor = 0
         self.display_buffer_position = 0
         self.no_last_spaces = 0
+        self.ac=True
+
 
     def ref_ar(self):
         return self.refresh_area

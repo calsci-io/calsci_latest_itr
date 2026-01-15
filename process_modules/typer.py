@@ -5,7 +5,7 @@ class Typer:
     def __init__(self, keypad, keypad_map):
         self.keypad=keypad
         self.keypad_map=keypad_map
-        self.debounce_delay_time=0.2
+        self.debounce_delay_time=0.15
         self.min_debounce_delay_time=0.1
     def start_typing(self):
         time.sleep(self.debounce_delay_time)
