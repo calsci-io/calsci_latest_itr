@@ -1,4 +1,4 @@
-import time
+# import time
 import json
 from data_modules.object_handler import nav, keypad_state_manager, typer, display
 from data_modules.object_handler import current_app

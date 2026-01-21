@@ -1,4 +1,4 @@
-import time  # type:ignore
+# import time  # type:ignore
 from math import *
 # import machine
 from data_modules.object_handler import display, nav, typer, keypad_state_manager, form, form_refresh
@@ -151,4 +151,4 @@ def create_new():
         if inp not in ["alpha", "beta", "ok"]:
             form.update_buffer(inp)
         form_refresh.refresh(state=nav.current_state())
-        time.sleep(0.15)
+        # time.sleep(0.15)

@@ -1,4 +1,4 @@
-import time
+# import time
 import json
 from data_modules.object_handler import nav, keypad_state_manager, typer, display
 from data_modules.object_handler import current_app
@@ -47,6 +47,6 @@ def recently_used():
                 break
             menu.update_buffer(inp)
             menu_refresh.refresh(state=nav.current_state())
-            time.sleep(0.2)
+            # time.sleep(0.2)
     except Exception as e:
         print(f"Error: {e}")
