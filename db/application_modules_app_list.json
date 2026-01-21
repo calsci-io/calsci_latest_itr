@@ -28,6 +28,11 @@
         "name": "scientific_calculator",
         "folder":"application_modules",
         "visibility": true
+    },
+    {
+        "name": "functions",
+        "folder":"application_modules",
+        "visibility": true
     }
     
 ]

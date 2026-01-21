@@ -1,54 +1,150 @@
+# # import utime as time  # type:ignore
+# from math import *
+# import machine
+# from data_modules.object_handler import display, text, nav, text_refresh, typer, keypad_state_manager, keypad_state_manager_reset, current_app, app
+# from process_modules import boot_up_data_update
+# def calculate():
+#     global task
+#     keypad_state_manager_reset()
+#     display.clear_display()if text.retain_data == False:
+#         text.all_clear()
+#     else:
+#         text.refresh_area=(0, text.rows * text.cols)
+#         text.retain_data = False
+#     text_refresh.new=True
+#     text_refresh.refresh()
+#     try:
+#         while True:
+
+#             x = typer.start_typing()
+#             if x == "back":
+#                 current_app[0]="home"
+#                 current_app[1] = "application_modules"
+#                 break
+
+#             if (x == "ans" or x== "exe" or x == "ok") and text.text_buffer[0] != "𖤓":
+#                 try:
+#                     # 1. Get the raw result from eval
+#                     raw_res = eval(text.text_buffer[:text.text_buffer_nospace])
+                    
+#                     # 2. Format it using an f-string
+#                     res = f"= {raw_res:.12g}"
+#                 except Exception as e:
+#                     res = "= Invalid Input"
+
+#                 # text.all_clear()
+#                 # display.clear_display()
+#                 # text.update_buffer(res)
+#                 text.update_buffer("")
+#                 text_refresh.refresh(state=res)
+#                 text_refresh.new=True
+#                 continue
+
+#             elif x == "alpha" or x == "beta":                        
+#                 keypad_state_manager(x=x)
+#                 text.update_buffer("")
+#                 text_refresh.refresh(state=nav.current_state())
+#                 continue
+            
+#             elif x == "toolbox":
+#                 app.set_app_name("toolbox")
+#                 app.set_group_name("root")
+#                 break
+
+#             elif not (x == "ans" or x== "exe" or x == "ok"):
+#                 text.update_buffer(x)
+            
+#             if text.text_buffer[0] == "𖤓":
+#                 # display.clear_display()
+#                 text.all_clear()
+
+#             text_refresh.refresh(state=nav.current_state())
+#             # time.sleep(0.2)
+
+#     except Exception as e:
+#         print(f"Error: {e}")
+
+
+
+
 # import utime as time  # type:ignore
 from math import *
 import machine
 from data_modules.object_handler import display, text, nav, text_refresh, typer, keypad_state_manager, keypad_state_manager_reset, current_app, app
-from process_modules import boot_up_data_update
+# from process_modules import boot_up_data_update
+# import uasyncio as asyncio
+# from test_async import main, cancel_task
+# asyncio.run(main())
+# from 
+# from test_thread import run_espnow_message, end_espnow_task
+task=None
 def calculate():
     global task
     keypad_state_manager_reset()
     display.clear_display()
-    text.all_clear()
-    text_refresh.new=True
+    if text.retain_data == False:
+        text.all_clear()
+    else:
+        text.refresh_area=(0, text.rows * text.cols)
+        text.retain_data = False
     text_refresh.refresh()
+    # task=None
     try:
         while True:
-
+            
             x = typer.start_typing()
+            print(f"x = {x}")
+            # if x=="":
+            #     text_refresh.refresh(state=nav.current_state())
+            #     continue
             if x == "back":
-                current_app[0]="home"
-                current_app[1] = "application_modules"
+                app.set_app_name("home")
+                app.set_group_name("root")
                 break
 
-            if (x == "ans" or x== "exe" or x == "ok") and text.text_buffer[0] != "𖤓":
-                try:
-                    # 1. Get the raw result from eval
-                    raw_res = eval(text.text_buffer[:text.text_buffer_nospace])
-                    
-                    # 2. Format it using an f-string
-                    res = f"= {raw_res:.12g}"
-                except Exception as e:
-                    res = "= Invalid Input"
+            if x == "ok" and task == None:
+                # asyncio.run(main())
+                # run_espnow_message()
+                task=1
+                # task=asyncio.create_task(read_gpio())
 
-                # text.all_clear()
-                # display.clear_display()
-                # text.update_buffer(res)
-                text.update_buffer("")
-                text_refresh.refresh(state=res)
-                text_refresh.new=True
-                continue
+
+            elif x == "ok" and task != None:
+                # asyncio.run(cancel_task())
+                # end_espnow_task()
+                task=None
+
+            if x == "ans" and text.text_buffer[0] != "𖤓":
+                try:
+                    res = str(eval(text.text_buffer[:text.text_buffer_nospace]))
+                except Exception as e:
+                    res = "Invalid Input"
+                text.all_clear()
+                display.clear_display()
+                text.update_buffer(res)
 
             elif x == "alpha" or x == "beta":                        
                 keypad_state_manager(x=x)
                 text.update_buffer("")
-                text_refresh.refresh(state=nav.current_state())
-                continue
 
-            elif not (x == "ans" or x== "exe" or x == "ok"):
+            elif x == "off":
+                boot_up_data_update.main()
+                machine.deepsleep()
+
+            elif x == "toolbox":
+                app.set_app_name("toolbox")
+                app.set_group_name("root")
+                break
+
+            elif x != "ans":
                 text.update_buffer(x)
-            
+
+
             if text.text_buffer[0] == "𖤓":
-                # display.clear_display()
+                display.clear_display()
                 text.all_clear()
+            
+            
 
             text_refresh.refresh(state=nav.current_state())
             # time.sleep(0.2)

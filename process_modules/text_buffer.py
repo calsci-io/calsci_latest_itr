@@ -22,6 +22,7 @@ class Textbuffer:
         self.buffer()
         self.update_buffer("")
         self.ac=False
+        self.retain_data=False
 
     def buffer(self):
 
