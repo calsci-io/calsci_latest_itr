@@ -53,7 +53,7 @@ class Tbf:
                 self.disp_out.write_data(0b00000000)
             self.disp_out.set_column_address(0)
             j_counter=0
-            if "default" in state or "alpha" in state or "beta" in state:
+            if "default" in state or "alpha" in state or "beta" in state or "ALPHA" in state:
                 for j in state:
                     chtr=j
                 

@@ -186,6 +186,11 @@ def calculate():
                 text.update_buffer("")
                 text_refresh.refresh(state=nav.current_state())
                 continue
+            elif x == "caps":
+                keypad_state_manager(x="A")
+                text.update_buffer("")
+                text_refresh.refresh(state=nav.current_state())
+                continue
             
             elif x == "toolbox":
                 app.set_app_name("toolbox")

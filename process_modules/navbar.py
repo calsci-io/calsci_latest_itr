@@ -1,7 +1,7 @@
 class Nav:
     def __init__(self, disp_out, chrs):
         self.state="d"
-        self.states={"d":"default", "a":"alpha  ", "b":"beta   "}
+        self.states={"d":"default", "a":"alpha  ", "b":"beta   ", "A":"ALPHA  "}
         self.disp_out=disp_out
         self.chrs=chrs
 

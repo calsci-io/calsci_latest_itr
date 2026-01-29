@@ -66,9 +66,21 @@ class Keypad_5X8:
             ["(", ")", ";", "+", "-"],
             ["@", "?", "\"", "ans", "exe"]
         ]
-        
+        keypad_5X8_layout_ALPHA=[
+            ["on", "alpha", "beta", "home", "wifi"],
+            ["backlight", "back", "caps", "F", "L"],
+            ["nav_l", "nav_d", "nav_r", "ok", "nav_u"],
+            ["A", "B", "C", "D", "E"],
+            ["G", "H", "I", "J", "K"],
+            ["M", "N", "O", "P", "Q"],
+            ["R", "S", "T", "nav_b", "AC"],
+            ["U", "V", "W", "*", "/"],
+            ["X", "Y", "Z", "+", "-"],
+            [" ", "off", "tab", "ans", "exe"]
+        ]
+
         self.state=state
-        self.states={"d":keypad_5X8_layout_default, "a":keypad_5X8_layout_alpha, "b": keypad_5X8_layout_beta}
+        self.states={"d":keypad_5X8_layout_default, "a":keypad_5X8_layout_alpha, "b": keypad_5X8_layout_beta, "A": keypad_5X8_layout_ALPHA}
     def key_out(self, col, row):
         return self.states[self.state][row][col]
     def key_change(self, state):

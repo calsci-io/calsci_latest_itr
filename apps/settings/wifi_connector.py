@@ -113,13 +113,16 @@ def wifi_connector():
         if inp == "alpha" or inp == "beta":
             keypad_state_manager(x=inp)
             form.update_buffer("")
+        if inp == "caps":
+            keypad_state_manager(x="A")
+            form.update_buffer("")
 
-        if inp == "off":
-            machine.deepsleep()
+        # if inp == "off":
+        #     machine.deepsleep()
         if inp not in ["alpha", "beta", "ok"]:
             form.update_buffer(inp)
         form_refresh.refresh(state=nav.current_state())
-        time.sleep(0.15)
+        # time.sleep(0.15)
         
 
 def do_connect(ssid, password):

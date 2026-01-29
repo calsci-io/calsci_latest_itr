@@ -92,6 +92,9 @@ def keypad_state_manager(x):
     elif keymap.state == "b" and x[0] == "b":
         keymap.key_change(state="d")
         nav.state_change(state="d")
+    elif keymap.state == "A" and x[0] == "A":
+        keymap.key_change(state="d")
+        nav.state_change(state="d")
     else:
         keymap.key_change(state=x[0])
         nav.state_change(state=x[0])
