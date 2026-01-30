@@ -55,3 +55,5 @@ You can write, save, and run MicroPython apps directly on the calculator. Each f
 +-----------------------------------+
 | ESP-IDF / Hardware Abstraction |
 +-----------------------------------+
+
+software architecture needs to be edited
