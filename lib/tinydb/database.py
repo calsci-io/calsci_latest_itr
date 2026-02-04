@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 """
 This module contains the main component of TinyDB: the database.
 """

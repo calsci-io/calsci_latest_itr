@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 from machine import Pin, SoftSPI  # type: ignore
 import time
 

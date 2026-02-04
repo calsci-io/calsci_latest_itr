@@ -1,39 +1,44 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
+import json
 import os
+
 import machine
 import urequests as req
-import json
-from process_modules import boot_up_data_update
 
-# INSTALLED_APPS_LOCATION = "installed_applications"
-# json_file = "/database/installed_applications_app_list.json"
+from process_modules import boot_up_data_update
 
 
 def create_app_file(app_name, app_folder, app_code, mac_address_in_hex):
-	INSTALLED_APPS_LOCATION = app_folder
-	app_file_path = f"{INSTALLED_APPS_LOCATION}/{app_name}.py"
-	os.mkdir(INSTALLED_APPS_LOCATION)
+    installed_apps_location = app_folder
+    app_file_path = f"{installed_apps_location}/{app_name}.py"
+    os.mkdir(installed_apps_location)
     
-	with open(app_file_path, "w") as app_to_install:
-		app_to_install.write(app_code)
-		
-	app_check = req.get(f"https://czxnvqwbwszzfgecpkbi.supabase.co/functions/v1/confirm-download?macAddress={mac_address_in_hex}").json()
-	if app_check["response"] in ["update_downloaded", "update_updated"]:
-		boot_up_data_update.main()
-		machine.reset()
-		
-	print("Installation error")
+    with open(app_file_path, "w") as app_to_install:
+        app_to_install.write(app_code)
+        
+    app_check = req.get(
+        "https://czxnvqwbwszzfgecpkbi.supabase.co/functions/v1/"
+        f"confirm-download?macAddress={mac_address_in_hex}"
+    ).json()
+    if app_check["response"] in ["update_downloaded", "update_updated"]:
+        boot_up_data_update.main()
+        machine.reset()
+        
+    print("Installation error")
     
 def add_to_json(new_app, file_name):
     if not os.path.exists(file_name):
-        with open(file_name, 'w') as file:
+        with open(file_name, "w") as file:
             json.dump([], file)
 
-    with open(file_name, 'r') as file:
+    with open(file_name, "r") as file:
         data = json.load(file)
     
     data.append(new_app)
     
-    with open(file_name, 'w') as file:
+    with open(file_name, "w") as file:
         json.dump(data, file)
 
 def delete_app(app_name, app_folder, mac_address_in_hex):
@@ -43,7 +48,10 @@ def delete_app(app_name, app_folder, mac_address_in_hex):
         if os.path.exists(file_path):
             os.remove(file_path)
             print(f"File '{file_path}' deleted successfully.")
-            app_check = req.get(f"https://680fd07513e86af48dee.fra.appwrite.run/success?mac={mac_address_in_hex}").json()
+            app_check = req.get(
+                "https://680fd07513e86af48dee.fra.appwrite.run/"
+                f"success?mac={mac_address_in_hex}"
+            ).json()
             if app_check["response"] == "deleted_successfully":
                 boot_up_data_update.main()
                 machine.reset()
@@ -63,24 +71,28 @@ def delete_app_from_json(app_name, json_file):
 
 
 def app_updater(app_name, app_folder, app_code, mac_address_in_hex):
-	print("entered main function of app_installer")
-	app_name = app_name[:-3] # Exclude .py of the file name
-	INSTALLED_APPS_LOCATION = app_folder
-	new_app = {
-        "name":app_name,
-        "folder":INSTALLED_APPS_LOCATION,
-        "visibility":True
+    print("entered main function of app_installer")
+    app_name = app_name[:-3]
+    installed_apps_location = app_folder
+    new_app = {
+        "name": app_name,
+        "folder": installed_apps_location,
+        "visibility": True,
     }
-	json_file = f"/database/{INSTALLED_APPS_LOCATION}_app_list.json"
-	add_to_json(new_app=new_app, file_name=json_file)
-	print("name added to json")
-	create_app_file(app_name=app_name, app_folder=app_folder, app_code=app_code, mac_address_in_hex=mac_address_in_hex)
-    # print(f"{app_name} created successfully \n")
+    json_file = f"/database/{installed_apps_location}_app_list.json"
+    add_to_json(new_app=new_app, file_name=json_file)
+    print("name added to json")
+    create_app_file(
+        app_name=app_name,
+        app_folder=app_folder,
+        app_code=app_code,
+        mac_address_in_hex=mac_address_in_hex,
+    )
 
 
 def app_deleter(app_name, app_folder, mac_address_in_hex):
-    INSTALLED_APPS_LOCATION = app_folder
-    json_file = f"/database/{INSTALLED_APPS_LOCATION}_app_list.json"
+    installed_apps_location = app_folder
+    json_file = f"/database/{installed_apps_location}_app_list.json"
     delete_app_from_json(app_name=app_name, json_file=json_file)
     delete_app(app_name=app_name, app_folder=app_folder, mac_address_in_hex=mac_address_in_hex)
             

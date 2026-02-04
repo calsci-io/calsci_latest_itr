@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 import random
 def get_data():
     # a=random.randint(1,99)

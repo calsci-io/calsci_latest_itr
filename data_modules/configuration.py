@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 from input_modules.keypad import Keypad
 keypad_rows=[33, 25, 26, 27, 14, 12, 13, 23]
 keypad_cols=[36, 39, 34, 35, 32]

@@ -1,12 +1,25 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 class Menu:
-    def __init__(self, rows=8, cols=21, menu_list = ["label_0", "label_1", "label_2"], menu_cursor = 0, menu_display_position = 0):
-        self.rows=rows
-        self.cols=cols
-        self.menu_list=menu_list
-        self.menu_cursor=menu_cursor
-        self.menu_display_position=menu_display_position
+    def __init__(
+        self,
+        rows=8,
+        cols=21,
+        menu_list=None,
+        menu_cursor=0,
+        menu_display_position=0,
+    ):
+        self.rows = rows
+        self.cols = cols
+        self.menu_list = menu_list or ["label_0", "label_1", "label_2"]
+        self.menu_cursor = menu_cursor
+        self.menu_display_position = menu_display_position
         self.menu_display_size = min(self.rows, len(self.menu_list))
-        self.display_buffer = self.menu_list[self.menu_display_position:self.menu_display_position + self.menu_display_size]
+        self.display_buffer = self.menu_list[
+            self.menu_display_position : self.menu_display_position
+            + self.menu_display_size
+        ]
         self.display_cursor = self.menu_cursor - self.menu_display_position
         self.refresh_rows = (0, self.menu_display_size)
 
@@ -21,7 +34,10 @@ class Menu:
                 self.menu_display_position += 1
                 self.refresh_rows = (0, self.menu_display_size)
             else:
-                self.refresh_rows = (self.menu_cursor - 1 - self.menu_display_position, self.menu_cursor - self.menu_display_position+1)
+                self.refresh_rows = (
+                    self.menu_cursor - 1 - self.menu_display_position,
+                    self.menu_cursor - self.menu_display_position + 1,
+                )
         elif text == "nav_u":
             self.menu_cursor -= 1
             if self.menu_cursor < 0:  # Wrap to bottom if at the top
@@ -32,9 +48,15 @@ class Menu:
                 self.menu_display_position -= 1
                 self.refresh_rows = (0, self.menu_display_size)
             else:
-                self.refresh_rows = (self.menu_cursor - self.menu_display_position, self.menu_cursor - self.menu_display_position + 2)
+                self.refresh_rows = (
+                    self.menu_cursor - self.menu_display_position,
+                    self.menu_cursor - self.menu_display_position + 2,
+                )
 
-        self.display_buffer = self.menu_list[self.menu_display_position:self.menu_display_position + self.menu_display_size]
+        self.display_buffer = self.menu_list[
+            self.menu_display_position : self.menu_display_position
+            + self.menu_display_size
+        ]
         self.display_cursor = self.menu_cursor - self.menu_display_position
     
     def buffer(self):
@@ -47,9 +69,12 @@ class Menu:
         return self.refresh_rows
     
     def update(self):
-        self.menu_cursor=0
-        self.menu_display_position=0
+        self.menu_cursor = 0
+        self.menu_display_position = 0
         self.menu_display_size = min(self.rows, len(self.menu_list))
-        self.display_buffer = self.menu_list[self.menu_display_position:self.menu_display_position + self.menu_display_size]
+        self.display_buffer = self.menu_list[
+            self.menu_display_position : self.menu_display_position
+            + self.menu_display_size
+        ]
         self.display_cursor = self.menu_cursor - self.menu_display_position
         self.refresh_rows = (0, self.menu_display_size)

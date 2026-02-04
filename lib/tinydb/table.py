@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 """
 This module implements tables, the central place for accessing and manipulating
 data in TinyDB.
