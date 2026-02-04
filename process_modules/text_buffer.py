@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 class Textbuffer:
     def __init__(self, text_buffer="𖤓", rows=7, cols=21):
         if text_buffer != "𖤓":
@@ -26,7 +29,6 @@ class Textbuffer:
 
     def buffer(self):
 
-        # Calculate the number of spaces needed to make the buffer length a multiple of cols
         self.buffer_length = len(self.text_buffer)
         self.text_buffer_nospace = len(self.text_buffer) - 1
         remaining_spaces = (
@@ -36,13 +38,9 @@ class Textbuffer:
         )
         self.no_last_spaces = remaining_spaces
 
-        # Append all necessary spaces at once to avoid repeated string concatenation
         if remaining_spaces > 0:
             self.text_buffer += " " * remaining_spaces
-        # Calculate the menu_buffer only once
         self.menu_buffer_size = self.buffer_length + remaining_spaces
-        # self.menu_buffer = list(range(self.menu_buffer_size))
-        # Ensure text_buffer has enough characters to fill display buffer
         total_buffer_size = self.rows * self.cols
         if self.menu_buffer_size < total_buffer_size:
             self.extra_spaces = total_buffer_size - self.menu_buffer_size
@@ -52,7 +50,6 @@ class Textbuffer:
             self.extra_spaces = 0
         self.menu_buffer = list(range(self.menu_buffer_size))
 
-        # Slicing menu_buffer to create the display buffer
         self.display_buffer = self.menu_buffer[
             self.display_buffer_position : self.display_buffer_position
             + total_buffer_size

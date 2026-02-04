@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 class Nav:
     def __init__(self, elements={"keypad":"D", "wifi":"WN", "bluetooth":"B", "capslock":"C", "app_name":"app", "charging":"NCH"}):
         self.elements=elements
@@ -20,7 +23,6 @@ class Nav:
         self.charging=self.elements["charging"] # charging values can be "CH ", "NCH"
 
     def buffer(self):
-        # el=self.elements
         buf=[self.keypad, self.wifi, self.bluetooth, self.capslock, self.app_name, self.charging]
         nav_str=""
         for i in range(len(buf)):

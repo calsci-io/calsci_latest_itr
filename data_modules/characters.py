@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 class Characters:
 
     Chr5X8_data = {

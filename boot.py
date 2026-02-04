@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 import machine
 # machine.freq(240000000)
 if machine.wake_reason() == 2:

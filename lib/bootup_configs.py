@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 from tinydb import TinyDB, Query
 db = TinyDB('db/settings.json')
 q=Query()

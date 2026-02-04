@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 import time
 import usb.device
 from usb.device.keyboard import KeyboardInterface

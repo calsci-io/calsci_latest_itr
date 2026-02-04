@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 class Form:
     def __init__(self, rows=7, menu_cursor=0, menu_display_position=0, input_list={"inp_0":" ", "inp_1":" ", "inp_2":" "}, form_list=["label_0", "inp_0", "label_1", "inp_1", "label_2", "inp_2"], input_cursor=0, input_display_position=0, input_cols=21-2):
         self.rows=rows
@@ -21,12 +24,10 @@ class Form:
             if self.menu_cursor==len(self.form_list):
                 self.menu_cursor=0
                 self.menu_display_position=0
-                # refresh_rows=(0,rows)
                 self.refresh_rows=(0,self.actual_rows)
 
             elif self.menu_cursor-self.menu_display_position==self.actual_rows:
                 self.menu_display_position+=1
-                # refresh_rows=(0,rows)
                 self.refresh_rows=(0,self.actual_rows)
 
             else:
@@ -40,12 +41,10 @@ class Form:
             if self.menu_cursor<0:
                 self.menu_cursor=len(self.form_list)-1
                 self.menu_display_position=len(self.form_list)-self.actual_rows
-                # refresh_rows=(0,rows)
                 self.refresh_rows=(0,self.actual_rows)
 
             elif self.menu_cursor<self.menu_display_position:
                 self.menu_display_position-=1
-                # refresh_rows=(0,rows)
                 self.refresh_rows=(0,self.actual_rows)
 
             else:

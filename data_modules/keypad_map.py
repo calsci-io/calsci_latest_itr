@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 class Keypad_5X8:
     def __init__(self, state="d"):
         # keypad_5X8_layout_default=[

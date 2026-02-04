@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 from machine import Pin # type: ignore
 from tinydb import TinyDB, Query
 # Assuming the backlight is connected to a specific pin (e.g., Pin 15)

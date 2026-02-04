@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 class Nav:
     def __init__(self, disp_out, chrs):
         self.state="d"

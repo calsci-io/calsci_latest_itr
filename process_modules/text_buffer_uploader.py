@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 class Tbf:
     def __init__(self, disp_out, chrs, t_b):
         self.disp_out=disp_out

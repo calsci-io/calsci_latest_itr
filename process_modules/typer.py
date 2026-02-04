@@ -1,4 +1,6 @@
-# from data_modules.object_handler import test_deep_sleep_awake
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 from sleeping_features import test_deep_sleep_awake, swdt
 import time
 class Typer:
@@ -14,19 +16,12 @@ class Typer:
             text=self.keypad_map.key_out(col=int(key_inp[0]), row=int(key_inp[1]))
             swdt.feed()
             if text == "off" or text == "on":
-                # time.sleep(0.2)
-                # display.clear_display()
-                # display.off()
                 test_deep_sleep_awake()
             return text
         except KeyboardInterrupt:
             swdt.stop()
             print("soft watchdog timer stopped")
             raise  # Let REPL get it!
-        # except Exception as e:
-        #     swdt.stop()
-        #     print("soft watchdog timer stopped", e)
-        #     return 0
     def debounce_delay(self,t=None):
         if t==None:
             return self.debounce_delay_time

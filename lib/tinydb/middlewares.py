@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 """
 Contains the :class:`base class <tinydb.middlewares.Middleware>` for
 middlewares and implementations.
