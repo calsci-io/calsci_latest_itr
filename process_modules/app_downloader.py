@@ -6,27 +6,28 @@ from tinydb import TinyDB, Query
 import machine
 class Apps():
     def __init__(self):
-        self.db = TinyDB('db/installed_apps.json')
-        self.App = Query()
+        self.db = TinyDB("db/installed_apps.json")
+        self.app_query = Query()
 
     def insert(self, app_name, group_name="installed_apps"):
-        self.db.insert({'app_name': app_name, 'group_name': group_name})
+        self.db.insert({"app_name": app_name, "group_name": group_name})
         return True
 
     def search_app_name(self, app_name, group_name="installed_apps"):
-        r = self.db.search((self.App.app_name == app_name) & (self.App.group_name == group_name))
-        if len(r)==0:
+        result = self.db.search(
+            (self.app_query.app_name == app_name)
+            & (self.app_query.group_name == group_name)
+        )
+        if len(result) == 0:
             return None
-        else:
-            return r
+        return result
 
     def sea_by_g(self, group_name):
-        r = self.db.search(self.App.group_name == group_name)
-        return r
+        return self.db.search(self.app_query.group_name == group_name)
 
-    def get_group_apps(self, group_name="installed_apps"): #read current apps
-        res=self.sea_by_g(group_name)
-        app_list=[]
+    def get_group_apps(self, group_name="installed_apps"):
+        res = self.sea_by_g(group_name)
+        app_list = []
         for app in res:
             app_list.append(app["app_name"])
         return app_list
@@ -36,16 +37,17 @@ class Apps():
         if app == None:
             self.insert(app_name, group_name)
             return True
-        else:
-            return False
+        return False
 
-    def delete_app(self, app_name, group_name="installed_apps"): #delete existing app
-        app=self.search_app_name(app_name)
-        if app == None:
+    def delete_app(self, app_name, group_name="installed_apps"):
+        app = self.search_app_name(app_name)
+        if app is None:
             return False
-        else:
-            self.db.remove((self.App.app_name == app_name) & (self.App.group_name == group_name))
-            return True
+        self.db.remove(
+            (self.app_query.app_name == app_name)
+            & (self.app_query.group_name == group_name)
+        )
+        return True
 
 class App_downloader:
     def __init__(self):
@@ -70,10 +72,9 @@ class App_downloader:
         
         res=r.json()
         print(res)
-        self.app_name=res["app_name"]
-        f = open(f"/apps/installed_apps/{self.app_name}.py", 'w')
-        f.write(res["code"])                           ########################### needs to be edited
-        f.close()
+        self.app_name = res["app_name"]
+        with open(f"/apps/installed_apps/{self.app_name}.py", "w") as app_file:
+            app_file.write(res["code"])
         return True
     
     
@@ -88,7 +89,7 @@ class App_downloader:
         print(res)
         return True
 
-    def reset(self): #5. reset operation
+    def reset(self):
         from machine import reset
         reset()
         return True

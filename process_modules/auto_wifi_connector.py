@@ -6,15 +6,19 @@ from data_modules.object_handler import display
 import time
 from data_modules.object_handler import data_bucket
 import json
+import time
+
+import network  # type: ignore
+
+from data_modules.object_handler import data_bucket, display
 
 wifi_password_data = "/database/wifi.json"
-connection_status = False
 sta_if = network.WLAN(network.STA_IF)
 
 def auto_wifi_connector():
     display.clear_display()
     with open(wifi_password_data, "r") as file:
-            data = json.load(file)
+        data = json.load(file)
 
     network_names = scan_networks()
     network_names = network_names[:5] if len(network_names) >= 5 else network_names
@@ -33,12 +37,12 @@ def auto_wifi_connector():
                 
 def scan_networks():
     network_names = []
-    sta_if = network.WLAN(network.STA_IF)
-    sta_if.active(True)
-    networks = sta_if.scan()
+    station = network.WLAN(network.STA_IF)
+    station.active(True)
+    networks = station.scan()
     for i, network_info in enumerate(networks):
         ssid = network_info[0].decode()
-        network_names.append(f'{i + 1}. {ssid}')
+        network_names.append(f"{i + 1}. {ssid}")
 
     return network_names
 
@@ -46,15 +50,15 @@ def do_connect(ssid, password):
     sta_if.active(True)
     if sta_if.isconnected():
         return None
-    print('Trying to connect to %s...' % ssid)
+    print(f"Trying to connect to {ssid}...")
     sta_if.connect(ssid, password)
-    for retry in range(100):
+    for _ in range(100):
         connected = sta_if.isconnected()
         if connected:
             break
         time.sleep(0.1)
     if connected:
-        print('\nConnected. Network config: ', sta_if.ifconfig())
+        print("\nConnected. Network config: ", sta_if.ifconfig())
         
     else:
         print('\nFailed. Not Connected to: ' + ssid)
