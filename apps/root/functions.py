@@ -17,7 +17,7 @@ def functions(db={}):
     #         menu_list.append(apps["name"])
     
 
-    menu.menu_list=["recently_used", "create_new"]
+    menu.menu_list=["recently_used", "create_new", "delete_function"]
     menu.update()
     menu_refresh.refresh()
     try:

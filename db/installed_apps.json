@@ -39,6 +39,10 @@
         "10": {
             "app_name": "temp_sensor",
             "group_name": "installed_apps"
+        },
+        "11": {
+            "app_name": "utc_time",
+            "group_name": "installed_apps"
         }
     }
 }
