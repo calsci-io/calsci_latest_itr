@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 import machine
 import builtins
 from process_modules.text_buffer import Textbuffer

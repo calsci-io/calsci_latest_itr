@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 # dark_mode_state=False
 # from data_modules.object_handler import display
 # from tinydb import TinyDB, Query

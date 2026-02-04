@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 import network # type: ignore
 from data_modules.object_handler import nav, keypad_state_manager, menu, menu_refresh, form, form_refresh, typer, display
 import time

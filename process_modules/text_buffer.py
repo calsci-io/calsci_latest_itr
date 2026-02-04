@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 class Textbuffer:
     def __init__(self, text_buffer="𖤓", rows=7, cols=21):
         if text_buffer != "𖤓":

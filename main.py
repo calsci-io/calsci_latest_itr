@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 # from data_modules.object_handler import display, form, form_refresh
 # form.form_list = ["CalSciCalSciCalSciCal", "alSciCalSciCalSciCalS", "lSciCalSciCalSciCalSc", "SciCalSciCalSciCalSci", "ciCalSciCalSciCalSciC", "iCalSciCalSciCalSciCa", "CalSciCalSciCalSciCal", "alSciCalSciCalSciCalS"]
 # form.update()
