@@ -24,12 +24,10 @@ class Form:
             if self.menu_cursor==len(self.form_list):
                 self.menu_cursor=0
                 self.menu_display_position=0
-                # refresh_rows=(0,rows)
                 self.refresh_rows=(0,self.actual_rows)
 
             elif self.menu_cursor-self.menu_display_position==self.actual_rows:
                 self.menu_display_position+=1
-                # refresh_rows=(0,rows)
                 self.refresh_rows=(0,self.actual_rows)
 
             else:
@@ -43,12 +41,10 @@ class Form:
             if self.menu_cursor<0:
                 self.menu_cursor=len(self.form_list)-1
                 self.menu_display_position=len(self.form_list)-self.actual_rows
-                # refresh_rows=(0,rows)
                 self.refresh_rows=(0,self.actual_rows)
 
             elif self.menu_cursor<self.menu_display_position:
                 self.menu_display_position-=1
-                # refresh_rows=(0,rows)
                 self.refresh_rows=(0,self.actual_rows)
 
             else:

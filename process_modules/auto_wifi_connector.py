@@ -20,19 +20,13 @@ def auto_wifi_connector():
     network_names = network_names[:5] if len(network_names) >= 5 else network_names
     network_names[:] = [network[3:] for network in network_names]
         
-    # print(f"data= {data}")
-    # print(f"network_names= {network_names}")
     for network in data:
         for network_name in network_names:
             if network["ssid"] == network_name and not data_bucket["connection_status_g"]:
                 do_connect(ssid=network_name, password=network["password"])
                 data_bucket["connection_status_g"] = sta_if.isconnected()
-                # print(f"outside if, network_name = {network_name}")
                 if data_bucket["connection_status_g"]:
-                    # print(f"inside if, network_name = {network_name}")
-                    # print(f"data_bucket= {data_bucket}")
                     data_bucket["ssid_g"] = network_name
-                    # print(f"data_bucket= {data_bucket}")
 
                     break
 
@@ -65,4 +59,3 @@ def do_connect(ssid, password):
     else:
         print('\nFailed. Not Connected to: ' + ssid)
 
-    # return connected

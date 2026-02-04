@@ -23,7 +23,6 @@ class Nav:
         self.charging=self.elements["charging"] # charging values can be "CH ", "NCH"
 
     def buffer(self):
-        # el=self.elements
         buf=[self.keypad, self.wifi, self.bluetooth, self.capslock, self.app_name, self.charging]
         nav_str=""
         for i in range(len(buf)):
