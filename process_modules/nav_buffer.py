@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 class Nav:
     def __init__(self, elements={"keypad":"D", "wifi":"WN", "bluetooth":"B", "capslock":"C", "app_name":"app", "charging":"NCH"}):
         self.elements=elements

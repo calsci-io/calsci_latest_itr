@@ -103,4 +103,4 @@ CalSci aims to be more than a calculator—it’s a tiny programmable computing 
 
 ## 📄 License
 
-No explicit license is currently included in the repository. If you plan to share or distribute CalSci, consider adding one.
+CalSci is available under the MIT License. See the [LICENSE](LICENSE) file for details.

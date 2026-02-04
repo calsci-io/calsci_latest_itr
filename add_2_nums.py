@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 import utime as time  # type:ignore
 from data_modules.object_handler import keypad_state_manager
 

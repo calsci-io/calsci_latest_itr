@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 from dynamic_stuff.dynamic_switches import new_upload
 from dynamic_stuff.dynamic_data import menu_items_data
 from data_modules.object_handler import nav, chrs

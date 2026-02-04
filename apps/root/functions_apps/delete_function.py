@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 from data_modules.object_handler import nav, keypad_state_manager, typer, display, app, menu, menu_refresh
 from data_modules.db_instance import fun_db
 from tinydb import Query

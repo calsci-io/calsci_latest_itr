@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 import framebuf # type: ignore
 import math
 import utime as time  # type:ignore

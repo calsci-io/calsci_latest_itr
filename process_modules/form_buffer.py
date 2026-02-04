@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 class Form:
     def __init__(self, rows=7, menu_cursor=0, menu_display_position=0, input_list={"inp_0":" ", "inp_1":" ", "inp_2":" "}, form_list=["label_0", "inp_0", "label_1", "inp_1", "label_2", "inp_2"], input_cursor=0, input_display_position=0, input_cols=21-2):
         self.rows=rows

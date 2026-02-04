@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 import network # type: ignore
 from data_modules.object_handler import display
 import time

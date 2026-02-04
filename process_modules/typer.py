@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 # from data_modules.object_handler import test_deep_sleep_awake
 from sleeping_features import test_deep_sleep_awake, swdt
 import time
