@@ -4,7 +4,7 @@
 from data_modules.object_handler import app
 
 def app_runner():
-    if app.get_app_name() is None or app.get_group_name() is None:
+    if (app.get_app_name() == None) or (app.get_group_name() == None):
         app.set_app_name("home")
         app.set_group_name("root")
     

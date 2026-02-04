@@ -1,13 +1,11 @@
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
-import json
 import os
 
 import machine
 import urequests as req
 
-from process_modules import boot_up_data_update
 
 
 def create_app_file(app_name, app_folder, app_code, mac_address_in_hex):
@@ -79,15 +77,10 @@ def app_updater(app_name, app_folder, app_code, mac_address_in_hex):
         "folder": installed_apps_location,
         "visibility": True,
     }
-    json_file = f"/database/{installed_apps_location}_app_list.json"
-    add_to_json(new_app=new_app, file_name=json_file)
-    print("name added to json")
-    create_app_file(
-        app_name=app_name,
-        app_folder=app_folder,
-        app_code=app_code,
-        mac_address_in_hex=mac_address_in_hex,
-    )
+	json_file = f"/database/{INSTALLED_APPS_LOCATION}_app_list.json"
+	add_to_json(new_app=new_app, file_name=json_file)
+	print("name added to json")
+	create_app_file(app_name=app_name, app_folder=app_folder, app_code=app_code, mac_address_in_hex=mac_address_in_hex)
 
 
 def app_deleter(app_name, app_folder, mac_address_in_hex):

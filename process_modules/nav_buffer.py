@@ -30,15 +30,11 @@ class Nav:
         self.charging = self.elements["charging"]
 
     def buffer(self):
-        buf = [
-            self.keypad,
-            self.wifi,
-            self.bluetooth,
-            self.capslock,
-            self.app_name,
-            self.charging,
-        ]
-        return "-".join(buf)
+        buf=[self.keypad, self.wifi, self.bluetooth, self.capslock, self.app_name, self.charging]
+        nav_str=""
+        for i in range(len(buf)):
+            nav_str += (buf[i] + "-" if i != len(buf)-1 else buf[i])
+        return nav_str
     
     def refresh_element(self):
         return self.changed_element

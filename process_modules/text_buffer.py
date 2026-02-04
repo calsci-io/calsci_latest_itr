@@ -28,6 +28,7 @@ class Textbuffer:
         self.retain_data = False
 
     def buffer(self):
+
         self.buffer_length = len(self.text_buffer)
         self.text_buffer_nospace = len(self.text_buffer) - 1
         remaining_spaces = (

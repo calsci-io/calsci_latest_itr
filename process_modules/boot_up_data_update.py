@@ -1,6 +1,7 @@
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
+import os
 import json
 
 from data_modules.object_handler import data_bucket, current_app

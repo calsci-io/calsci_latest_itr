@@ -30,3 +30,4 @@ class Tbf:
                     self.disp_out.write_data(cursor_line)
         self.disp_out.set_page_address(7)
         self.disp_out.set_column_address(0)
+        j_counter=0

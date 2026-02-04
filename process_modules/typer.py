@@ -1,6 +1,8 @@
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
+# from data_modules.object_handler import test_deep_sleep_awake
+from sleeping_features import test_deep_sleep_awake, swdt
 import time
 
 from sleeping_features import swdt, test_deep_sleep_awake
@@ -25,8 +27,8 @@ class Typer:
             swdt.stop()
             print("soft watchdog timer stopped")
             raise  # Let REPL get it!
-    def debounce_delay(self, t=None):
-        if t is None:
+    def debounce_delay(self,t=None):
+        if t==None:
             return self.debounce_delay_time
         if isinstance(t, (int, float)):
             if t >= self.min_debounce_delay_time:

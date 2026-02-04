@@ -1,6 +1,10 @@
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
+import network # type: ignore
+from data_modules.object_handler import display
+import time
+from data_modules.object_handler import data_bucket
 import json
 import time
 
@@ -57,4 +61,5 @@ def do_connect(ssid, password):
         print("\nConnected. Network config: ", sta_if.ifconfig())
         
     else:
-        print(f"\nFailed. Not Connected to: {ssid}")
+        print('\nFailed. Not Connected to: ' + ssid)
+
