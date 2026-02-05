@@ -1,7 +1,7 @@
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
-class App:
+class App():
     def __init__(self):
         self.app_data = {
             "app_name": None,

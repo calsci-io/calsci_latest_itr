@@ -66,3 +66,4 @@ class Tbf:
             for k in chtr_byte_data:
                 self.disp_out.write_data(k)
             self.disp_out.write_data(cursor_line)
+            j_counter+=1

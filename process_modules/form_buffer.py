@@ -43,14 +43,14 @@ class Form:
         if inp == "nav_d":
             self.menu_cursor += 1
 
-            if self.menu_cursor == len(self.form_list):
-                self.menu_cursor = 0
-                self.menu_display_position = 0
-                self.refresh_rows = (0, self.actual_rows)
+            if self.menu_cursor==len(self.form_list):
+                self.menu_cursor=0
+                self.menu_display_position=0
+                self.refresh_rows=(0,self.actual_rows)
 
-            elif self.menu_cursor - self.menu_display_position == self.actual_rows:
-                self.menu_display_position += 1
-                self.refresh_rows = (0, self.actual_rows)
+            elif self.menu_cursor-self.menu_display_position==self.actual_rows:
+                self.menu_display_position+=1
+                self.refresh_rows=(0,self.actual_rows)
 
             else:
                 self.refresh_rows = (
@@ -63,14 +63,14 @@ class Form:
         elif inp == "nav_u":
             self.menu_cursor -= 1
 
-            if self.menu_cursor < 0:
-                self.menu_cursor = len(self.form_list) - 1
-                self.menu_display_position = len(self.form_list) - self.actual_rows
-                self.refresh_rows = (0, self.actual_rows)
+            if self.menu_cursor<0:
+                self.menu_cursor=len(self.form_list)-1
+                self.menu_display_position=len(self.form_list)-self.actual_rows
+                self.refresh_rows=(0,self.actual_rows)
 
-            elif self.menu_cursor < self.menu_display_position:
-                self.menu_display_position -= 1
-                self.refresh_rows = (0, self.actual_rows)
+            elif self.menu_cursor<self.menu_display_position:
+                self.menu_display_position-=1
+                self.refresh_rows=(0,self.actual_rows)
 
             else:
                 self.refresh_rows = (
