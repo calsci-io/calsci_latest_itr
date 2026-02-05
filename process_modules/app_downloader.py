@@ -1,112 +1,97 @@
-import requests
-from tinydb import TinyDB, Query
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 import machine
-# from data_modules.object_handler import mac_str
-# from data_modules.object_handler import mac_str
-class Apps():
+import requests
+from tinydb import Query, TinyDB
+
+
+class Apps:
     def __init__(self):
-        self.db = TinyDB('db/installed_apps.json')
-        self.App = Query()
+        self.db = TinyDB("db/installed_apps.json")
+        self.app_query = Query()
 
     def insert(self, app_name, group_name="installed_apps"):
-        self.db.insert({'app_name': app_name, 'group_name': group_name})
+        self.db.insert({"app_name": app_name, "group_name": group_name})
         return True
 
     def search_app_name(self, app_name, group_name="installed_apps"):
-        r = self.db.search((self.App.app_name == app_name) & (self.App.group_name == group_name))
-        if len(r)==0:
+        result = self.db.search(
+            (self.app_query.app_name == app_name)
+            & (self.app_query.group_name == group_name)
+        )
+        if len(result) == 0:
             return None
-        else:
-            return r
+        return result
 
     def sea_by_g(self, group_name):
-        r = self.db.search(self.App.group_name == group_name)
-        return r
+        return self.db.search(self.app_query.group_name == group_name)
 
-    def get_group_apps(self, group_name="installed_apps"): #read current apps
-        res=self.sea_by_g(group_name)
-        app_list=[]
+    def get_group_apps(self, group_name="installed_apps"):
+        res = self.sea_by_g(group_name)
+        app_list = []
         for app in res:
             app_list.append(app["app_name"])
         return app_list
     
-    def insert_new_app(self, app_name, group_name="installed_apps"): #insert new app
-        # app_present=False
-        app=self.search_app_name(app_name)
-        if app == None:
+    def insert_new_app(self, app_name, group_name="installed_apps"):
+        app = self.search_app_name(app_name)
+        if app is None:
             self.insert(app_name, group_name)
             return True
-        else:
-            return False
+        return False
 
-    def delete_app(self, app_name, group_name="installed_apps"): #delete existing app
-        app=self.search_app_name(app_name)
-        if app == None:
+    def delete_app(self, app_name, group_name="installed_apps"):
+        app = self.search_app_name(app_name)
+        if app is None:
             return False
-        else:
-            self.db.remove((self.App.app_name == app_name) & (self.App.group_name == group_name))
-            return True
+        self.db.remove(
+            (self.app_query.app_name == app_name)
+            & (self.app_query.group_name == group_name)
+        )
+        return True
 
 class App_downloader:
     def __init__(self):
-        # from data_modules.object_handler import mac_str
-        # import machine
-        # mac_str = ''.join('{:02X}'.format(b) for b in machine.unique_id())
         self.apps = Apps()
-        self.mac=''.join('{:02X}'.format(b) for b in machine.unique_id())
-        self.app_name=""
-        # mac_str=mac_str = ''.join('{:02X}'.format(b) for b in machine.unique_id())
-    def check_status(self): #1. req 1
-        check_status_url = "https://czxnvqwbwszzfgecpkbi.supabase.co/functions/v1/check-pending-apps?macAddress="+self.mac                    ###################### needs to be edited
-        # import urequests
-        r=requests.get(check_status_url)
-        res=r.json()
-        print(res)
-        # return r
-        if res["response"]=="true":
-            return True
-        else:
-            return False
+        self.mac = "".join("{:02X}".format(b) for b in machine.unique_id())
+        self.app_name = ""
 
-    # def show_app_data(self, app_name): 
-    #     import requests
-    #     app_data_url = f"http://example.com/app_data/{app_name}"
-    #     r = requests.get(app_data_url)
-    #     return r.json()
-
-    def download_app(self): #2. req 2
-        # import urequests
-        
-        download_url = f"https://czxnvqwbwszzfgecpkbi.supabase.co/functions/v1/get-pending-apps?macAddress={self.mac}"              ##################### needs to be edited
-        r = requests.get(str(download_url))
-        
-        res=r.json()
+    def check_status(self):
+        check_status_url = (
+            "https://czxnvqwbwszzfgecpkbi.supabase.co/functions/v1/"
+            f"check-pending-apps?macAddress={self.mac}"
+        )
+        res = requests.get(check_status_url).json()
         print(res)
-        self.app_name=res["app_name"]
-        f = open(f"/apps/installed_apps/{self.app_name}.py", 'w')
-        f.write(res["code"])                           ########################### needs to be edited
-        f.close()
+        return res["response"] == "true"
+
+    def download_app(self):
+        download_url = (
+            "https://czxnvqwbwszzfgecpkbi.supabase.co/functions/v1/"
+            f"get-pending-apps?macAddress={self.mac}"
+        )
+        res = requests.get(download_url).json()
+        print(res)
+        self.app_name = res["app_name"]
+        with open(f"/apps/installed_apps/{self.app_name}.py", "w") as app_file:
+            app_file.write(res["code"])
         return True
     
-    # def install_app(self, app_name):
-    #     import requests
-    #     install_url = f"http://example.com/install/{app_name}"
-    #     r = requests.get(install_url)
-    #     return r.json()
-    
-    def update_app_list(self): #3. db operation
+    def update_app_list(self):
         self.apps.insert_new_app(self.app_name)
         return True
 
-    def send_confirmation(self): #4. req 3
-        # import requests
-        confirmation_url = f"https://czxnvqwbwszzfgecpkbi.supabase.co/functions/v1/confirm-download?macAddress={self.mac}"                ################# needs to be edited 
-        r = requests.get(str(confirmation_url))
-        res=r.json()
+    def send_confirmation(self):
+        confirmation_url = (
+            "https://czxnvqwbwszzfgecpkbi.supabase.co/functions/v1/"
+            f"confirm-download?macAddress={self.mac}"
+        )
+        res = requests.get(confirmation_url).json()
         print(res)
         return True
 
-    def reset(self): #5. reset operation
+    def reset(self):
         from machine import reset
         reset()
         return True

@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 # import time
 from machine import Pin, PWM
 from data_modules.object_handler import nav, keypad_state_manager, app

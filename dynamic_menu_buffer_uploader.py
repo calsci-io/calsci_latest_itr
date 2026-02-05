@@ -1,3 +1,6 @@
+# Copyright (c) 2025 CalSci
+# Licensed under the MIT License.
+
 # import _thread
 # from dynamic_stuff.dynamic_functions import get_data
 from dynamic_stuff.dynamic_switches import new_upload
