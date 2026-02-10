@@ -30,7 +30,7 @@
         "visibility": true
     },
     {
-        "name": "functions",
+        "name": "function_locker",
         "folder":"application_modules",
         "visibility": true
     }

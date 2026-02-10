@@ -115,7 +115,7 @@ def create_new():
         inp = typer.start_typing()
         # print(type(inp))
         if inp == "back":
-            app.set_app_name("functions")
+            app.set_app_name("function_locker")
             app.set_group_name("root")
             break
         
