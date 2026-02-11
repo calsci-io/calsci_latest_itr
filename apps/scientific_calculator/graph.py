@@ -17,7 +17,7 @@
 # - 'a' key: Toggle cursor on/off
 # - Back: Exit
 
-import framebuf # type: ignore
+from mocking import framebuf # type: ignore
 import math
 import utime as time  # type:ignore
 from data_modules.object_handler import display, form, nav, text, text_refresh, form_refresh, typer, keypad_state_manager, keypad_state_manager_reset
