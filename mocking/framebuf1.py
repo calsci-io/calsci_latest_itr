@@ -18,7 +18,49 @@ class FrameBuffer:
         self.format = format
         self.stride = stride if stride else width
         
+        # Dirty region tracking
+        self.dirty_x1 = width
+        self.dirty_y1 = height
+        self.dirty_x2 = 0
+        self.dirty_y2 = 0
+        self.is_dirty = False
+        
+    def _mark_dirty(self, x, y, w=1, h=1):
+        """Mark a region as dirty (needs refresh)"""
+        x1 = max(0, x)
+        y1 = max(0, y)
+        x2 = min(self.width, x + w)
+        y2 = min(self.height, y + h)
+        
+        if x1 < self.dirty_x1:
+            self.dirty_x1 = x1
+        if y1 < self.dirty_y1:
+            self.dirty_y1 = y1
+        if x2 > self.dirty_x2:
+            self.dirty_x2 = x2
+        if y2 > self.dirty_y2:
+            self.dirty_y2 = y2
+        self.is_dirty = True
+    
+    def clear_dirty(self):
+        """Reset dirty tracking after refresh"""
+        self.dirty_x1 = self.width
+        self.dirty_y1 = self.height
+        self.dirty_x2 = 0
+        self.dirty_y2 = 0
+        self.is_dirty = False
+    
+    def get_dirty_region(self):
+        """Get the bounding box of dirty region (x, y, w, h)"""
+        if not self.is_dirty:
+            return None
+        return (self.dirty_x1, self.dirty_y1, 
+                self.dirty_x2 - self.dirty_x1, 
+                self.dirty_y2 - self.dirty_y1)
+        
     def _setpixel(self, x, y, color):
+        self._mark_dirty(x, y, 1, 1)
+        
         if self.format == self.MVLSB:
             index = (y >> 3) * self.stride + x
             offset = y & 0x07
@@ -87,9 +129,36 @@ class FrameBuffer:
         x2 = min(self.width, x + w)
         y2 = min(self.height, y + h)
         
+        self._mark_dirty(x1, y1, x2 - x1, y2 - y1)
+        
         for j in range(y1, y2):
             for i in range(x1, x2):
-                self._setpixel(i, j, color)
+                # Direct pixel setting without marking dirty again
+                if self.format == self.MVLSB:
+                    index = (j >> 3) * self.stride + i
+                    offset = j & 0x07
+                    self.buffer[index] = (self.buffer[index] & ~(1 << offset)) | ((color != 0) << offset)
+                elif self.format == self.RGB565:
+                    index = (i + j * self.stride) << 1
+                    self.buffer[index] = color & 0xFF
+                    self.buffer[index + 1] = (color >> 8) & 0xFF
+                elif self.format == self.GS8:
+                    self.buffer[i + j * self.stride] = color & 0xFF
+                elif self.format == self.GS4_HMSB:
+                    index = (i + j * self.stride) >> 1
+                    if i & 1:
+                        self.buffer[index] = (color & 0x0F) | (self.buffer[index] & 0xF0)
+                    else:
+                        self.buffer[index] = ((color & 0x0F) << 4) | (self.buffer[index] & 0x0F)
+                elif self.format == self.GS2_HMSB:
+                    index = (i + j * self.stride) >> 2
+                    shift = (i & 0x3) << 1
+                    mask = 0x3 << shift
+                    self.buffer[index] = ((color & 0x3) << shift) | (self.buffer[index] & (~mask))
+                elif self.format in (self.MHLSB, self.MHMSB):
+                    index = (i + j * self.stride) >> 3
+                    offset = (i & 7) if self.format == self.MHMSB else 7 - (i & 7)
+                    self.buffer[index] = (self.buffer[index] & ~(1 << offset)) | ((color != 0) << offset)
                 
     def hline(self, x, y, w, color):
         self.fill_rect(x, y, w, 1, color)
@@ -228,24 +297,52 @@ class FrameBuffer:
             y = self.height - 1
             yend = ystep - 1
             dy = -1
-            
+        
+        self._mark_dirty(0, 0, self.width, self.height)
+        
         while y != yend:
             x = sx
             while x != xend:
-                self._setpixel(x, y, self._getpixel(x - xstep, y - ystep))
+                # Direct pixel operations without marking dirty
+                if self.format == self.MVLSB:
+                    index = (y >> 3) * self.stride + x
+                    offset = y & 0x07
+                    src_index = ((y - ystep) >> 3) * self.stride + (x - xstep)
+                    src_offset = (y - ystep) & 0x07
+                    pixel = (self.buffer[src_index] >> src_offset) & 1
+                    self.buffer[index] = (self.buffer[index] & ~(1 << offset)) | (pixel << offset)
+                else:
+                    pixel = self._getpixel(x - xstep, y - ystep)
+                    # Direct set without dirty tracking
+                    if self.format == self.RGB565:
+                        index = (x + y * self.stride) << 1
+                        self.buffer[index] = pixel & 0xFF
+                        self.buffer[index + 1] = (pixel >> 8) & 0xFF
+                    elif self.format == self.GS8:
+                        self.buffer[x + y * self.stride] = pixel & 0xFF
                 x += dx
             y += dy
             
     def text(self, s, x, y, color=1):
-        from characters import Characters
-        
+        start_x = x
         for char in s:
             chr_data = Characters.Chr2bytes(Characters, char)
+            char_width = 5
+            
+            # Mark dirty region for entire text
+            self._mark_dirty(start_x, y, len(s) * 6, 8)
+            
             for j in range(5):
                 if 0 <= x + j < self.width:
                     vline = chr_data[j]
                     for i in range(8):
                         if vline & (1 << i):
                             if 0 <= y + i < self.height:
-                                self._setpixel(x + j, y + i, color)
+                                # Direct pixel write without marking dirty again
+                                if self.format == self.MVLSB:
+                                    index = ((y + i) >> 3) * self.stride + (x + j)
+                                    offset = (y + i) & 0x07
+                                    self.buffer[index] = self.buffer[index] | (1 << offset)
+                                else:
+                                    self._setpixel(x + j, y + i, color)
             x += 6

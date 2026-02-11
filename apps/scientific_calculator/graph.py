@@ -1,21 +1,6 @@
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
-# Optimized version for CalSci hardware with cursor and better plotting
-#
-# KEY OPTIMIZATIONS:
-# 1. Memory: Uses stream processing instead of large arrays (~2KB vs 50KB)
-# 2. Speed: 2 samples/pixel instead of up to 25 (256 vs 3200+ samples)
-# 3. Partial rendering: Cursor movement uses cached graph (instant updates)
-#    - Clean graph cached in cache_buffer
-#    - Cursor movement just copies cache + draws cursor (no re-plotting!)
-# 4. Features: Cursor, zoom, pan, discontinuity detection
-#
-# CONTROLS:
-# - OK: Plot graph
-# - +/-: Zoom in/out (full replot)
-# - Arrow keys: Pan graph OR move cursor (if cursor active)
-# - 'a' key: Toggle cursor on/off
-# - Back: Exit
+# Optimized version with partial refresh for faster rendering
 
 from mocking import framebuf # type: ignore
 import math
@@ -42,7 +27,7 @@ eval_globals = {
 ZOOM_IN = 0.8
 ZOOM_OUT = 1.25
 PAN_SHIFT = 0.15
-SAMPLES_PER_PX = 2  # Reduced from 25 to 2 for hardware
+SAMPLES_PER_PX = 2
 
 def format_number(value):
     """Format number for display."""
@@ -57,7 +42,6 @@ def format_number(value):
             return "-pi "
         else:
             return str(int(multiple)) + "*pi "
-    # Simplified formatting
     if abs(value) < 0.01:
         return "0 "
     elif abs(value) < 100:
@@ -139,12 +123,12 @@ class CursorState:
     """Lightweight cursor state."""
     def __init__(self):
         self.active = False
-        self.x_pixel = 64  # Center
-        self.prev_x_pixel = 64  # Track previous position for partial redraw
+        self.x_pixel = 64
+        self.prev_x_pixel = 64
 
     def toggle(self):
         self.active = not self.active
-        self.prev_x_pixel = self.x_pixel  # Reset tracking when toggling
+        self.prev_x_pixel = self.x_pixel
 
     def move(self, direction, width=128):
         """Move cursor and return True if position changed."""
@@ -170,7 +154,7 @@ def safe_eval(func, exp_str, x):
         return None
 
 def draw_cursor(fb, cursor, bounds, func, exp_str, width=128, height=56):
-    """Draw cursor line and coordinates."""
+    """Draw cursor line and coordinates - marks dirty region."""
     if not cursor.active:
         return
 
@@ -180,6 +164,10 @@ def draw_cursor(fb, cursor, bounds, func, exp_str, width=128, height=56):
 
     # Calculate x coordinate
     x_coord = bounds['x_min'] + (cursor.x_pixel / (width - 1)) * x_range
+
+    # Mark cursor area as dirty (vertical line + text areas)
+    fb._mark_dirty(cursor.x_pixel, 0, 1, height + 8)  # Cursor line + text area
+    fb._mark_dirty(0, height, width, 8)  # Full text area at bottom
 
     # Draw vertical line
     fb.vline(cursor.x_pixel, 0, height, 1)
@@ -206,15 +194,16 @@ def draw_cursor(fb, cursor, bounds, func, exp_str, width=128, height=56):
         draw_medium_text(fb, "y undef", width - 42, height + 1)
 
 def plot_function(fb, func, exp_str, x_min, x_max, y_min, y_max, width=128, height=64, cursor=None):
-    """Optimized plotting with minimal memory usage."""
+    """Optimized plotting - marks entire plot area as dirty."""
     global eval_globals
 
-    # Height is already reduced by caller if cursor is active
-    # So we use the full height parameter for plotting
     plot_height = height
 
     if width < 2 or plot_height < 2:
         return
+
+    # Mark entire plot area as dirty
+    fb._mark_dirty(0, 0, width, plot_height)
 
     x_range = x_max - x_min
     y_range = y_max - y_min
@@ -240,10 +229,7 @@ def plot_function(fb, func, exp_str, x_min, x_max, y_min, y_max, width=128, heig
     if 0 <= y_axis_x < width:
         fb.vline(y_axis_x, 0, plot_height, 1)
 
-    # Axis labels are now drawn separately via draw_bounds_labels()
-    pass
-
-    # Optimized plotting: stream processing, no arrays
+    # Optimized plotting: stream processing
     total_samples = width * SAMPLES_PER_PX
     step = x_range / (total_samples - 1)
 
@@ -256,13 +242,11 @@ def plot_function(fb, func, exp_str, x_min, x_max, y_min, y_max, width=128, heig
         y_val = safe_eval(func, exp_str, x_val)
 
         if y_val is None:
-            # Discontinuity - reset line
             prev_x_px = None
             prev_y_px = None
             prev_y_val = None
             continue
 
-        # Check if in bounds
         if y_val < y_min or y_val > y_max:
             prev_x_px = None
             prev_y_px = None
@@ -278,14 +262,11 @@ def plot_function(fb, func, exp_str, x_min, x_max, y_min, y_max, width=128, heig
             prev_y_val = None
             continue
 
-        # Draw pixel
         fb.pixel(x_px, y_px, 1)
 
-        # Draw line if we have previous point
         if prev_x_px is not None and prev_y_px is not None:
-            # Check for discontinuity (large jump)
             dy = abs(y_px - prev_y_px)
-            if dy < plot_height // 3:  # Not too large a jump
+            if dy < plot_height // 3:
                 fb.line(prev_x_px, prev_y_px, x_px, y_px, 1)
 
         prev_x_px = x_px
@@ -358,53 +339,78 @@ def apply_pan(bounds, direction):
     return new_bounds
 
 def replot(fb, fb_buf, exp_str, bounds, cursor, cache_buf=None):
-    """Clear and replot graph. Always caches clean graph (without cursor)."""
+    """Clear and replot graph with partial refresh support."""
     start_time = time.ticks_ms()
 
     fb.fill(0)
-
-    # Determine if we need bottom margin for cursor coordinates
     use_cursor = cursor and cursor.active
 
-    # Always plot without cursor first, but with proper height
+    # Plot without cursor first
     plot_function(fb, polynom1, exp_str,
                   bounds['x_min'], bounds['x_max'],
                   bounds['y_min'], bounds['y_max'],
-                  128, 64 if not use_cursor else 56, None)  # Reduce height if cursor active
+                  128, 64 if not use_cursor else 56, None)
 
-    # Cache the clean graph for fast cursor updates (always cache without cursor)
+    # Cache clean graph
     if cache_buf is not None:
-        cache_buf[:] = fb_buf  # Fast copy using slicing
+        cache_buf[:] = fb_buf
 
-    # Add cursor on top if active
+    # Add cursor
     if use_cursor:
         draw_cursor(fb, cursor, bounds, polynom1, exp_str, 128, 56)
 
-    display.clear_display()
-    display.graphics(fb_buf)
+    # PARTIAL REFRESH: Only update dirty region
+    if fb.is_dirty:
+        dirty_region = fb.get_dirty_region()
+        if dirty_region:
+            x, y, w, h = dirty_region
+            print(f"Partial update: x={x}, y={y}, w={w}, h={h}")
+            # If your display supports partial update:
+            # display.partial_update(x, y, w, h, fb_buf)
+            # Otherwise fall back to full update:
+            display.clear_display()
+            display.graphics(fb_buf)
+        fb.clear_dirty()
+    else:
+        display.clear_display()
+        display.graphics(fb_buf)
 
     elapsed = time.ticks_diff(time.ticks_ms(), start_time)
     print("Replot:", elapsed, "ms")
 
 def update_cursor_only(fb, fb_buf, cache_buf, cursor, bounds, exp_str):
-    """Fast cursor update - only redraws cursor without re-plotting graph."""
+    """Fast cursor update with partial refresh."""
     start_time = time.ticks_ms()
 
-    # Fast byte copy using slicing (much faster than loop!)
+    # Restore clean graph from cache
     fb_buf[:] = cache_buf
+    
+    # Clear dirty state before drawing cursor
+    fb.clear_dirty()
 
-    # Draw cursor on top
+    # Draw cursor (this marks dirty region)
     if cursor.active:
         draw_cursor(fb, cursor, bounds, polynom1, exp_str, 128, 56)
 
-    # Only update display, no need to clear
-    display.graphics(fb_buf)
+    # PARTIAL REFRESH: Only update cursor area
+    if fb.is_dirty:
+        dirty_region = fb.get_dirty_region()
+        if dirty_region:
+            x, y, w, h = dirty_region
+            print(f"Cursor partial: x={x}, y={y}, w={w}, h={h}")
+            # If your display supports partial update:
+            # display.partial_update(x, y, w, h, fb_buf)
+            # Otherwise:
+            display.graphics(fb_buf)
+        fb.clear_dirty()
+    else:
+        display.graphics(fb_buf)
 
     elapsed = time.ticks_diff(time.ticks_ms(), start_time)
     print("Cursor update:", elapsed, "ms")
 
 def graph(db={}):
-    """Main graph application."""
+    """Main graph application with partial refresh."""
     print("Graph start, mem:", gc.mem_free())
     keypad_state_manager_reset()
 
@@ -425,10 +431,7 @@ def graph(db={}):
 
     buffer1 = bytearray((128 * 64) // 8)
     fb1 = framebuf.FrameBuffer(buffer1, 128, 64, framebuf.MONO_VLSB)
-
-    # Cache buffer for fast cursor updates
     cache_buffer = bytearray((128 * 64) // 8)
-
     cursor = CursorState()
 
     while True:
@@ -462,60 +465,46 @@ def graph(db={}):
             while True:
                 inp_breaker = typer.start_typing()
 
-                # Toggle cursor with 'a' key
                 if inp_breaker in ("a", "A", "module", "copy"):
                     cursor.toggle()
                     replot(fb1, buffer1, form.inp_list()["inp_0"], bounds, cursor, cache_buffer)
 
-                # Zoom in
                 elif inp_breaker == "+":
                     bounds = apply_zoom(bounds, ZOOM_IN)
                     update_bounds(bounds)
                     replot(fb1, buffer1, form.inp_list()["inp_0"], bounds, cursor, cache_buffer)
 
-                # Zoom out
                 elif inp_breaker == "-":
                     bounds = apply_zoom(bounds, ZOOM_OUT)
                     update_bounds(bounds)
                     replot(fb1, buffer1, form.inp_list()["inp_0"], bounds, cursor, cache_buffer)
 
-                # Pan up
                 elif inp_breaker == "nav_u":
-                    if cursor.active:
-                        # Move cursor (no vertical movement in current design)
-                        pass
-                    else:
+                    if not cursor.active:
                         bounds = apply_pan(bounds, 'up')
                         update_bounds(bounds)
                         replot(fb1, buffer1, form.inp_list()["inp_0"], bounds, cursor, cache_buffer)
 
-                # Pan down
                 elif inp_breaker == "nav_d":
-                    if cursor.active:
-                        pass
-                    else:
+                    if not cursor.active:
                         bounds = apply_pan(bounds, 'down')
                         update_bounds(bounds)
                         replot(fb1, buffer1, form.inp_list()["inp_0"], bounds, cursor, cache_buffer)
 
-                # Pan left / Move cursor left
                 elif inp_breaker == "nav_l":
                     if cursor.active:
                         if cursor.x_pixel > 0:
                             cursor.x_pixel -= 1
-                            # Fast cursor update - just copy cache and redraw cursor!
                             update_cursor_only(fb1, buffer1, cache_buffer, cursor, bounds, form.inp_list()["inp_0"])
                     else:
                         bounds = apply_pan(bounds, 'left')
                         update_bounds(bounds)
                         replot(fb1, buffer1, form.inp_list()["inp_0"], bounds, cursor, cache_buffer)
 
-                # Pan right / Move cursor right
                 elif inp_breaker == "nav_r":
                     if cursor.active:
                         if cursor.x_pixel < 127:
                             cursor.x_pixel += 1
-                            # Fast cursor update - just copy cache and redraw cursor!
                             update_cursor_only(fb1, buffer1, cache_buffer, cursor, bounds, form.inp_list()["inp_0"])
                     else:
                         bounds = apply_pan(bounds, 'right')
@@ -535,7 +524,6 @@ def graph(db={}):
                     current_app[1] = "root"
                     return
 
-            # Exit interactive mode
             fb1.fill(0)
             form.refresh_rows = (0, form.actual_rows)
             display.clear_display()
