@@ -15,9 +15,9 @@
         "visibility": true
     },
     {
-        "name": "chatbot_ai",
+        "name": "ChatGPT",
         "folder": "application_modules",
-        "visibility": false
+        "visibility": true
     },
     {
         "name": "installed_apps",
@@ -31,6 +31,11 @@
     },
     {
         "name": "function_locker",
+        "folder":"application_modules",
+        "visibility": true
+    },
+    {
+        "name": "latex_calc",
         "folder":"application_modules",
         "visibility": true
     }
