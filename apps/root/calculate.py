@@ -1,3 +1,12 @@
+import st7565 as display
+
+try:
+    import tools
+    if hasattr(display, "graphics") and not hasattr(display.graphics, "pixels_changed"):
+        display.graphics = tools.refresh(display.graphics, pixels_changed=200)
+except Exception:
+    pass
+
 from math import *
 from data_modules.object_handler import display, text, nav, text_refresh, typer, keypad_state_manager, keypad_state_manager_reset, current_app, app
 from data_modules.db_instance import fun_db

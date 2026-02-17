@@ -1,3 +1,4 @@
+import st7565 as display
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
@@ -36,4 +37,3 @@ def update_sleep_time(time):
 
 def keypad_normal():
     opin = machine.Pin(21, machine.Pin.OUT, value=1, hold=False)
-

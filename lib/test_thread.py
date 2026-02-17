@@ -1,3 +1,4 @@
+import st7565 as display
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
@@ -60,4 +61,3 @@ def end_espnow_task():
     global espnow_state
     espnow_state = False
     print("chat closed")
-

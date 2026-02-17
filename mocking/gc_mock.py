@@ -1,3 +1,12 @@
+import st7565 as display
+
+try:
+    import tools
+    if hasattr(display, "graphics") and not hasattr(display.graphics, "pixels_changed"):
+        display.graphics = tools.refresh(display.graphics, pixels_changed=200)
+except Exception:
+    pass
+
 """
 Mock gc module extensions for simulator.
 Adds MicroPython-specific gc functions to Python's gc module.

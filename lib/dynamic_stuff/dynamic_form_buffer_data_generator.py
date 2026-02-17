@@ -1,3 +1,4 @@
+import st7565 as display
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
@@ -19,4 +20,3 @@ def data_generator():
             form.form_list[i]=menu_items_data[i]
         print(form.form_list)
         time.sleep(0.1)
-

@@ -1,3 +1,12 @@
+import st7565 as display
+
+try:
+    import tools
+    if hasattr(display, "graphics") and not hasattr(display.graphics, "pixels_changed"):
+        display.graphics = tools.refresh(display.graphics, pixels_changed=200)
+except Exception:
+    pass
+
 # apps/root/math_renderer.py
 # Mathematical expression renderer for CalSci based on coordinate layout system
 # Renders fractions, exponents, and roots on 128x64 monochrome display
