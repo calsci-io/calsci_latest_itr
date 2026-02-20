@@ -47,6 +47,10 @@
         "12": {
             "app_name": "dino",
             "group_name": "installed_apps"
+        },
+        "13": {
+            "app_name": "lvgl_icon_demo",
+            "group_name": "installed_apps"
         }
     }
 }
