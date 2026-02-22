@@ -18,6 +18,7 @@ import utime as time  # type:ignore
 
 from data_modules.object_handler import (
     current_app,
+    data_bucket,
     display,
     form,
     form_refresh,
@@ -58,7 +59,7 @@ BOTTOM_PAGE_INDEX = DISPLAY_PAGES - 1
 ZOOM_IN_FACTOR = 0.9
 ZOOM_OUT_FACTOR = 1.1
 PAN_SHIFT_FACTOR = 0.09       #  set 
-INPUT_POLL_MS = 0.5
+INPUT_POLL_MS = 1.0
 INPUT_POLL_SEC = INPUT_POLL_MS / 1000.0
 FAST_POLL_RESUME_DELAY_MS = 500
 
@@ -1179,7 +1180,15 @@ def graph(db={}):
 
     def _set_fast_poll():
         if prev_debounce is not None:
-            typer.debounce_delay_time = INPUT_POLL_SEC
+            fast_poll_sec = INPUT_POLL_SEC
+            try:
+                raw = data_bucket.get("hyb_graph_fast_debounce_sec", INPUT_POLL_SEC)
+                fast_poll_sec = float(raw)
+            except Exception:
+                fast_poll_sec = INPUT_POLL_SEC
+            if fast_poll_sec < 0.001:
+                fast_poll_sec = 0.001
+            typer.debounce_delay_time = fast_poll_sec
 
     def _restore_default_poll():
         if prev_debounce is not None:
