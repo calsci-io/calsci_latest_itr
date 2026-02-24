@@ -7,13 +7,8 @@ db = TinyDB('db/settings.json')
 q=Query()
 from machine import Pin
 def backlight():
-    backlight_status=db.search(q.feature=="backlight")
-    if backlight_status[0]["value"] == False:
-        from apps.settings.backlight import backlight_pin
-        backlight_pin.on()
-    elif backlight_status[0]["value"] == True:
-        from apps.settings.backlight import backlight_pin
-        backlight_pin.off()
+    from apps.settings.backlight import apply_saved_backlight
+    apply_saved_backlight()
 
 def darkmode():
     dark_mode_status=db.search(q.feature=="dark_mode")

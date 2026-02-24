@@ -112,9 +112,8 @@ def _switch_to(label, name):
     except Exception as e:
         print("Error switching to", label, ":", e)
 # --- End Triple Boot System ---
-from apps.settings.backlight import backlight_pin
-# backlight_pin.off() #3.0
-backlight_pin.on() #2.9
+from apps.settings.backlight import apply_saved_backlight
+apply_saved_backlight()
 # from test_thread import run_thread
 # run_thread()
 # import uasyncio as asyncio
@@ -234,7 +233,7 @@ data_bucket["ssid_g"] = ""
 # - global stable delay for menus/general typing
 # - graph app can temporarily switch to fast poll while cursor/tools are inactive
 try:
-    _HYB_GLOBAL_DEBOUNCE_SEC = 0.035
+    _HYB_GLOBAL_DEBOUNCE_SEC = 0.100
     typer.debounce_delay_time = _HYB_GLOBAL_DEBOUNCE_SEC
     data_bucket["hyb_global_debounce_sec"] = _HYB_GLOBAL_DEBOUNCE_SEC
 except Exception:
@@ -921,7 +920,7 @@ try:
     else:
         _hyb_write_line("HYBRID_PROTO:TXT")
     try:
-        _deb_ms = int(float(getattr(typer, "debounce_delay_time", 0.035)) * 1000)
+        _deb_ms = int(float(getattr(typer, "debounce_delay_time", 0.100)) * 1000)
         if _deb_ms > 0:
             _hyb_write_line("HYB_KEY_DEB_MS:%d" % _deb_ms)
     except Exception:
@@ -935,7 +934,7 @@ try:
     except Exception:
         pass
     _hyb_write_line("HYBRID_READY")
-    _hyb_write_line("HYBRID_BAUD:115200")
+    _hyb_write_line("HYBRID_BAUD:2000000")
     _thread.start_new_thread(_hyb_stdin_worker, ())
     _thread.start_new_thread(_hyb_state_worker, ())
     _hyb_emit_state(True)
