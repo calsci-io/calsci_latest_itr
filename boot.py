@@ -286,32 +286,17 @@ try:
     _hyb_frame_seq = 0
     _hyb_last_heartbeat = 0
     _hyb_emit_dirty_ms = 1
-    _hyb_emit_ui_ms = 1
-    _hyb_idle_emit_ms = 1
     _hyb_heartbeat_ms = 1
-    _hyb_full_keyframe_ms = 1
     _hyb_periodic_full_ms = 1
-    _hyb_full_only = False
-    _hyb_last_nav_sent = ""
-    _hyb_last_lines_sent = []
     _hyb_tx_lock = _thread.allocate_lock()
 
     _HYB_MAGIC0 = 0xCA
     _HYB_MAGIC1 = 0x1C
     _HYB_PKT_FULL = 1
-    _HYB_PKT_PATCH = 2
-    _HYB_PKT_NAV = 3
-    _HYB_PKT_LINES = 4
     _HYB_PKT_HEARTBEAT = 5
 
     _hyb_out = None
     _hyb_binary_ok = False
-
-    def _hyb_global(name):
-        try:
-            return globals().get(name, None)
-        except Exception:
-            return None
 
     def _hyb_ticks_ms():
         if _utime is not None and hasattr(_utime, "ticks_ms"):
@@ -328,118 +313,6 @@ try:
             _utime.sleep_ms(ms)
         else:
             _pytime.sleep(ms / 1000.0)
-
-    def _hyb_nav_state():
-        try:
-            nav_obj = _hyb_global("nav")
-            if nav_obj is not None and hasattr(nav_obj, "current_state"):
-                return str(nav_obj.current_state())
-        except Exception:
-            pass
-        return ""
-
-    def _hyb_clean_line(text):
-        try:
-            s = str(text)
-            s = s.replace("𖤓", "_")
-            return s
-        except Exception:
-            return ""
-
-    def _hyb_menu_lines():
-        try:
-            menu_obj = _hyb_global("menu")
-            if menu_obj is None or not hasattr(menu_obj, "buffer"):
-                return []
-            buf = menu_obj.buffer()
-            if not isinstance(buf, (list, tuple)) or not buf:
-                return []
-            if all(_hyb_clean_line(x).startswith("label_") for x in buf):
-                return []
-            cur = -1
-            if hasattr(menu_obj, "cursor"):
-                try:
-                    cur = int(menu_obj.cursor())
-                except Exception:
-                    cur = -1
-            lines = []
-            for i, row in enumerate(buf):
-                prefix = ">" if i == cur else " "
-                lines.append(prefix + _hyb_clean_line(row))
-            return lines[:7]
-        except Exception:
-            return []
-
-    def _hyb_form_lines():
-        try:
-            form_obj = _hyb_global("form")
-            if form_obj is None or not hasattr(form_obj, "buffer"):
-                return []
-            buf = form_obj.buffer()
-            if not isinstance(buf, (list, tuple)) or not buf:
-                return []
-            if all(_hyb_clean_line(x).startswith("label_") for x in buf):
-                return []
-            lines = []
-            cur = -1
-            if hasattr(form_obj, "cursor"):
-                try:
-                    cur = int(form_obj.cursor())
-                except Exception:
-                    cur = -1
-            inp_list = {}
-            if hasattr(form_obj, "inp_list"):
-                try:
-                    inp_list = form_obj.inp_list() or {}
-                except Exception:
-                    inp_list = {}
-            inp_start = 0
-            if hasattr(form_obj, "inp_display_position"):
-                try:
-                    inp_start = int(form_obj.inp_display_position())
-                except Exception:
-                    inp_start = 0
-            inp_cols = 19
-            if hasattr(form_obj, "inp_cols"):
-                try:
-                    inp_cols = int(form_obj.inp_cols())
-                except Exception:
-                    inp_cols = 19
-
-            for i, row in enumerate(buf):
-                name = _hyb_clean_line(row)
-                if name.startswith("inp_"):
-                    value = _hyb_clean_line(inp_list.get(name, ""))
-                    line = "=>" + value[inp_start : inp_start + inp_cols]
-                else:
-                    line = name
-                prefix = ">" if i == cur and not name.startswith("inp_") else " "
-                lines.append(prefix + line)
-            return lines[:7]
-        except Exception:
-            return []
-
-    def _hyb_text_lines():
-        try:
-            text_obj = _hyb_global("text")
-            if text_obj is None or not hasattr(text_obj, "buffer"):
-                return []
-            buf = text_obj.buffer()
-            if not isinstance(buf, (list, tuple)) or not buf:
-                return []
-            lines = []
-            for row in buf:
-                lines.append(_hyb_clean_line(row))
-            return lines[:7]
-        except Exception:
-            return []
-
-    def _hyb_lines_snapshot():
-        for producer in (_hyb_text_lines, _hyb_form_lines, _hyb_menu_lines):
-            lines = producer()
-            if lines:
-                return lines
-        return []
 
     def _hyb_write_line(text):
         try:
@@ -516,41 +389,6 @@ try:
         frame[7 + plen] = (crc >> 8) & 0xFF
         return _hyb_write_raw(frame)
 
-    def _hyb_send_nav(nav_txt):
-        if nav_txt is None:
-            nav_txt = ""
-        try:
-            raw = str(nav_txt).encode("utf-8")
-        except Exception:
-            raw = b""
-        if len(raw) > 120:
-            raw = raw[:120]
-        _hyb_send_packet(_HYB_PKT_NAV, 0, raw)
-
-    def _hyb_send_lines(lines):
-        try:
-            rows = list(lines or [])
-        except Exception:
-            rows = []
-        if len(rows) > 7:
-            rows = rows[:7]
-        payload = bytearray(b"\x00")
-        count = 0
-        for row in rows:
-            try:
-                raw = _hyb_clean_line(row).encode("utf-8")
-            except Exception:
-                raw = b""
-            if len(raw) > 31:
-                raw = raw[:31]
-            if len(payload) + 1 + len(raw) > 250:
-                break
-            payload.append(len(raw))
-            payload.extend(raw)
-            count += 1
-        payload[0] = count & 0xFF
-        _hyb_send_packet(_HYB_PKT_LINES, 0, payload)
-
     def _hyb_fb_flags(seq):
         flags = (int(seq) & 0x7F) << 1
         if _hyb_fb_seen:
@@ -566,32 +404,7 @@ try:
         _hyb_last_full_emit = _hyb_ticks_ms()
         return True
 
-    def _hyb_build_patches(max_patches=32, max_run=80):
-        patches = []
-        changed = 0
-        for page in range(8):
-            base = page * 128
-            col = 0
-            while col < 128:
-                if _hyb_fb[base + col] != _hyb_prev_fb[base + col]:
-                    start = col
-                    while (
-                        col < 128
-                        and _hyb_fb[base + col] != _hyb_prev_fb[base + col]
-                        and (col - start) < max_run
-                    ):
-                        col += 1
-                        changed += 1
-                    width = col - start
-                    raw = bytes(_hyb_fb[base + start : base + start + width])
-                    patches.append((page, start, width, 1, raw))
-                    if len(patches) >= max_patches:
-                        return changed + 1, patches
-                else:
-                    col += 1
-        return changed, patches
-
-    def _hyb_emit_state_text(nav_state, lines_state):
+    def _hyb_emit_state_text():
         try:
             has_pixels = False
             for _b in _hyb_fb:
@@ -607,8 +420,6 @@ try:
             payload = {
                 "fb": raw,
                 "fb_seen": _hyb_fb_seen,
-                "nav": nav_state,
-                "lines": lines_state,
             }
             _hyb_write_line("STATE:" + _json.dumps(payload))
             _hyb_prev_fb[:] = _hyb_fb
@@ -619,13 +430,8 @@ try:
     def _hyb_emit_state(force=False):
         global _hyb_dirty, _hyb_force_full, _hyb_last_emit, _hyb_last_heartbeat
         global _hyb_last_full_emit, _hyb_frame_seq
-        global _hyb_last_nav_sent, _hyb_last_lines_sent
 
         now = _hyb_ticks_ms()
-        nav_state = _hyb_nav_state()
-        lines_state = _hyb_lines_snapshot()
-        nav_changed = nav_state != _hyb_last_nav_sent
-        lines_changed = lines_state != _hyb_last_lines_sent
         periodic_full_due = _hyb_ticks_diff(now, _hyb_last_full_emit) >= _hyb_periodic_full_ms
         display_changed = _hyb_dirty or _hyb_force_full or force or periodic_full_due
         heartbeat_due = _hyb_ticks_diff(now, _hyb_last_heartbeat) >= _hyb_heartbeat_ms
@@ -634,9 +440,6 @@ try:
             diff = _hyb_ticks_diff(now, _hyb_last_emit)
             if display_changed:
                 if diff < _hyb_emit_dirty_ms:
-                    return
-            elif nav_changed or lines_changed:
-                if diff < _hyb_emit_ui_ms:
                     return
             elif not heartbeat_due:
                 return
@@ -655,26 +458,19 @@ try:
                 else:
                     _hyb_force_full = True
 
-            if nav_changed or force:
-                _hyb_send_nav(nav_state)
-                _hyb_last_nav_sent = nav_state
-                sent_ok = True
-            if lines_changed or force:
-                _hyb_send_lines(lines_state)
-                _hyb_last_lines_sent = lines_state
-                sent_ok = True
             if heartbeat_due:
                 hb_flags = _hyb_fb_flags(_hyb_frame_seq)
                 _hyb_send_packet(_HYB_PKT_HEARTBEAT, hb_flags, b"")
                 _hyb_last_heartbeat = now
                 sent_ok = True
         else:
-            sent_ok = _hyb_emit_state_text(nav_state, lines_state)
-            _hyb_last_nav_sent = nav_state
-            _hyb_last_lines_sent = lines_state
-            _hyb_dirty = False
-            _hyb_force_full = False
-            _hyb_last_heartbeat = now
+            # Text mode: stream framebuffer snapshots only when display updates.
+            # This avoids higher-level menu/form/text pre-analysis on device side.
+            if display_changed or force:
+                sent_ok = _hyb_emit_state_text()
+                _hyb_dirty = False
+                _hyb_force_full = False
+                _hyb_last_heartbeat = now
 
         if sent_ok:
             _hyb_last_emit = now
@@ -687,9 +483,9 @@ try:
             if not (0 <= col <= 4 and 0 <= row <= 9):
                 return False
             _hyb_key_queue.append((col, row))
-            # Do not force full-frame on every key; patch mode is much faster.
-            if not _hyb_fb_seen:
-                _hyb_force_full = True
+            # After key injection, force at least one display sync attempt so host
+            # observes the post-key screen state from the normal keypad logic path.
+            _hyb_force_full = True
             if len(_hyb_key_queue) > 1:
                 del _hyb_key_queue[:-1]
             return True
