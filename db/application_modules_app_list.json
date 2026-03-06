@@ -33,11 +33,6 @@
         "name": "function_locker",
         "folder":"application_modules",
         "visibility": true
-    },
-    {
-        "name": "latex_calc",
-        "folder":"application_modules",
-        "visibility": true
     }
     
 ]

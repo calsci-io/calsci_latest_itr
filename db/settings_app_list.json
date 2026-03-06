@@ -1,10 +1,5 @@
 [
     {
-        "name": "backlight",
-        "folder": "settings",
-        "visibility": true
-    },
-    {
         "name": "wifi_app",
         "folder": "settings",
         "visibility": true
@@ -33,16 +28,6 @@
         "name": "about_calsci",
         "folder": "settings",
         "visibility": false
-    },
-    {
-        "name": "Dark_Mode",
-        "folder": "settings",
-        "visibility": true
-    },
-    {
-        "name": "download_updates",
-        "folder": "settings",
-        "visibility": true
     },
     {
         "name": "mac_address",
