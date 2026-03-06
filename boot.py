@@ -121,7 +121,7 @@ backlight_pin.on() #2.9
 # from test_async import main
 # asyncio.run(main())
 import builtins
-from data_modules.object_handler import text, menu, form, text_refresh, menu_refresh, form_refresh, typer, data_bucket
+from data_modules.object_handler import text, menu, form, text_refresh, menu_refresh, form_refresh, typer, data_bucket, sta_if
 builtins.display=display
 builtins.text=text
 builtins.menu=menu
@@ -131,9 +131,48 @@ builtins.text_refresh=menu_refresh
 builtins.text_refresh=form_refresh
 builtins.typer=typer
 
+# Auto WiFi connect at boot (respects settings.auto_wifi_connect).
+builtins.sta_if = sta_if
+
+try:
+    import _thread
+except Exception:
+    _thread = None
 
 
-# WiFi startup disabled for fast boot.
-builtins.sta_if = None
-data_bucket["connection_status_g"] = False
-data_bucket["ssid_g"] = ""
+def _sync_wifi_status_from_sta():
+    try:
+        connected = bool(sta_if.isconnected())
+    except Exception:
+        connected = False
+
+    data_bucket["connection_status_g"] = connected
+    if connected:
+        try:
+            ssid_now = sta_if.config("essid")
+            data_bucket["ssid_g"] = ssid_now if isinstance(ssid_now, str) else ""
+        except Exception:
+            data_bucket["ssid_g"] = ""
+    else:
+        data_bucket["ssid_g"] = ""
+
+
+def _auto_wifi_boot_task():
+    try:
+        from process_modules.auto_wifi_connector import auto_wifi_connector
+        auto_wifi_connector()
+    except Exception as err:
+        print("Auto WiFi init failed:", err)
+        _sync_wifi_status_from_sta()
+
+
+# Seed status quickly, then connect in background so boot UI is not blocked.
+_sync_wifi_status_from_sta()
+if _thread is not None:
+    try:
+        _thread.start_new_thread(_auto_wifi_boot_task, ())
+    except Exception as err:
+        print("Auto WiFi thread start failed:", err)
+        _auto_wifi_boot_task()
+else:
+    _auto_wifi_boot_task()

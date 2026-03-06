@@ -43,10 +43,13 @@ from data_modules.object_handler import (
 
 ENV_PATHS = (".env", "/.env")
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
-SYSTEM_PROMPT_50_WORDS = "Always answer in 50 words or fewer. Never exceed 50 words."
+SYSTEM_PROMPT_RULES = (
+    "Always answer in 50 words or fewer. Never exceed 50 words. "
+    "Use plain text only. No Markdown. "
+    "Do not use *, **, _, __, `, headings, bullet points, or numbered lists."
+)
 
 
-NOISE_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 TEXT_COLS = 21
 
 
@@ -101,6 +104,13 @@ def _truncate_to_words(message, max_words=50):
     return " ".join(words[:max_words])
 
 
+def _sanitize_plain_text(message):
+    cleaned = str(message)
+    for token in ("**", "__", "*", "_", "`"):
+        cleaned = cleaned.replace(token, "")
+    return " ".join(cleaned.replace("\n", " ").replace("\r", " ").split())
+
+
 def _extract_response_text(payload):
     output_text = payload.get("output_text", "")
     if isinstance(output_text, str) and output_text.strip():
@@ -135,7 +145,7 @@ def _call_openai(prompt):
 
     payload = {
         "model": model,
-        "instructions": SYSTEM_PROMPT_50_WORDS,
+        "instructions": SYSTEM_PROMPT_RULES,
         "input": prompt,
         "temperature": 0.7,
         "max_output_tokens": 120,
@@ -186,7 +196,7 @@ def _call_openai(prompt):
             print("[ChatGPT] Empty API response payload:", body)
             return "No response from API."
 
-        return _truncate_to_words(reply, 50)
+        return _truncate_to_words(_sanitize_plain_text(reply), 50)
     except Exception as err:
         print("[ChatGPT] Request failed:", err)
         return "Request failed: " + str(err)
@@ -236,7 +246,7 @@ def _rand_ms(min_ms, max_ms):
     return min_ms + (getrandbits(16) % (max_ms - min_ms + 1))
 
 
-def _thinking_nav_animation_on_prompt(total_ms=1200, step_ms=150):
+def _thinking_nav_animation_on_prompt(total_ms=300, step_ms=100):
     # Runs on prompt screen navbar: Thinking. Thinking.. Thinking... Thinking..
     dots_seq = [".", "..", "...", ".."]
     frames = total_ms // step_ms
@@ -248,26 +258,19 @@ def _thinking_nav_animation_on_prompt(total_ms=1200, step_ms=150):
 
 def _stream_fake_gpt(text_to_stream):
     # No separate thinking window; animate in navbar on prompt screen
-    _thinking_nav_animation_on_prompt(total_ms=1200, step_ms=100)
+    _thinking_nav_animation_on_prompt(total_ms=200, step_ms=100)
 
     text.all_clear()
     text_refresh.new = True
     text_refresh.refresh(state=" > ChatGPT")
 
     for ch in text_to_stream:
-        if ch in " ,.;" and _rand_idx(100) < 35:
-            time.sleep_ms(_rand_ms(400, 600))
-
-        if ch not in " \n" and _rand_idx(100) < 28:
-            fake_ch = NOISE_CHARS[_rand_idx(len(NOISE_CHARS))]
-            text.update_buffer(fake_ch)
-            text_refresh.refresh(state="ChatGPT")
-            time.sleep_ms(_rand_ms(20, 60))
-            text.update_buffer("nav_b")
+        if ch in " ,.;" and _rand_idx(100) < 12:
+            time.sleep_ms(_rand_ms(35, 70))
 
         text.update_buffer(ch)
         text_refresh.refresh(state="ChatGPT")
-        time.sleep_ms(_rand_ms(18, 45))
+        time.sleep_ms(_rand_ms(3, 9))
 
 
 def ChatGPT():

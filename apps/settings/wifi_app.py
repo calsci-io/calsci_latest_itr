@@ -17,6 +17,14 @@ from data_modules.object_handler import nav, menu, menu_refresh, typer, display,
 from data_modules.object_handler import current_app, data_bucket
 from process_modules import boot_up_data_update
 
+
+def _extract_ssid(menu_line):
+    parts = str(menu_line).split(". ", 1)
+    if len(parts) == 2:
+        return parts[1].strip()
+    return str(menu_line).strip()
+
+
 def wifi_app(db={}):
     display.clear_display()
     menu_list = ["Scanning..."]
@@ -34,7 +42,8 @@ def wifi_app(db={}):
     while True:
         inp = typer.start_typing()
         if inp == "ok":
-            data_bucket["ssid_g"] = network_names[menu.cursor()][3:]
+            selected = network_names[menu.cursor()] if network_names else ""
+            data_bucket["ssid_g"] = _extract_ssid(selected)
             # current_app[0]="wifi_connector"
             app.set_app_name("wifi_connector")
             app.set_group_name("settings")
