@@ -11,7 +11,7 @@ find . -type f \
     -not -name ".gitattributes" \
     -not -name "*.pyc" \
     -not -path "*/.*/*" \
-    -not -name ".*" | while read -r file; do
+    \( -not -name ".*" -o -name ".env" \) | while read -r file; do
     echo "$file"
 done
 
@@ -41,7 +41,7 @@ find . -type f \
     -not -name ".gitattributes" \
     -not -name "*.pyc" \
     -not -path "*/.*/*" \
-    -not -name ".*" | while read -r file; do
+    \( -not -name ".*" -o -name ".env" \) | while read -r file; do
     # Strip the leading './'
     relative_path="${file#./}"
 

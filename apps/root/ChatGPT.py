@@ -12,9 +12,25 @@ except Exception:
 
 import utime as time  # type:ignore
 from urandom import getrandbits  # type:ignore
+try:
+    import ujson as json  # type:ignore
+except Exception:
+    import json  # type:ignore
+
+try:
+    import urequests as requests  # type:ignore
+except Exception:
+    import requests  # type:ignore
+
+try:
+    import network  # type:ignore
+except Exception:
+    network = None
+
 from data_modules.object_handler import (
     app,
     current_app,
+    data_bucket,
     display,
     form,
     form_refresh,
@@ -25,20 +41,9 @@ from data_modules.object_handler import (
     typer,
 )
 
-# LOREM_50_WORDS = (
-#     "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor "
-#     "incididunt ut labore et dolore magna aliqua. Vestibulum ante ipsum primis in "
-#     "faucibus orci luctus et ultrices posuere cubilia curae; Integer non turpis ac "
-#     "velit fermentum posuere. Cras vitae sem nec ipsum aliquet, justo at feugiat "
-#     "velit interdum."
-# )
-
-LOREM_50_WORDS = (
-    "Bandi 'patana' trick nahi, connection hota hai. Confident raho, clean dikho, "
-    "apni life aur goals pe focus karo. Normal conversation se start karo, zyada "
-    "suno, thoda humour rakho. Desperate mat lagna. 2-3 achhi baat ke baad seedha "
-    "coffee ke liye pucho. Mana kare to respect karo."
-)
+ENV_PATHS = (".env", "/.env")
+OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+SYSTEM_PROMPT_50_WORDS = "Always answer in 50 words or fewer. Never exceed 50 words."
 
 
 NOISE_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -57,6 +62,140 @@ def _render_text_lines(lines, state="ChatGPT"):
     text.update_buffer("".join(_line21(line) for line in lines))
     text_refresh.new = True
     text_refresh.refresh(state=state)
+
+
+def _load_env(paths=ENV_PATHS):
+    env = {}
+    for path in paths:
+        try:
+            with open(path, "r") as env_file:
+                for raw_line in env_file:
+                    line = raw_line.strip()
+                    if (not line) or line.startswith("#") or ("=" not in line):
+                        continue
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
+                    if value and (value[0] == value[-1]) and value[0] in ("'", '"'):
+                        value = value[1:-1]
+                    env[key] = value
+        except OSError:
+            continue
+    return env
+
+
+def _is_wifi_connected():
+    if network is None:
+        return True
+    try:
+        sta_if = network.WLAN(network.STA_IF)
+        return sta_if.isconnected()
+    except Exception:
+        return data_bucket.get("connection_status_g", False)
+
+
+def _truncate_to_words(message, max_words=50):
+    words = str(message).strip().split()
+    if len(words) <= max_words:
+        return " ".join(words)
+    return " ".join(words[:max_words])
+
+
+def _extract_response_text(payload):
+    output_text = payload.get("output_text", "")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text
+
+    parts = []
+    for item in payload.get("output", []):
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "message":
+            continue
+        for block in item.get("content", []):
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") in ("output_text", "text"):
+                parts.append(block.get("text", ""))
+    return "".join(parts)
+
+
+def _call_openai(prompt):
+    if not _is_wifi_connected():
+        print("[ChatGPT] Wi-Fi not connected")
+        return "No Wi-Fi. Connect from Settings."
+
+    env = _load_env()
+    api_key = env.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        print("[ChatGPT] OPENAI_API_KEY missing in .env")
+        return "Set OPENAI_API_KEY in .env"
+
+    model = env.get("OPENAI_MODEL", "gpt-5.4").strip() or "gpt-5.4"
+
+    payload = {
+        "model": model,
+        "instructions": SYSTEM_PROMPT_50_WORDS,
+        "input": prompt,
+        "temperature": 0.7,
+        "max_output_tokens": 120,
+    }
+    headers = {
+        "Authorization": "Bearer " + api_key,
+        "Content-Type": "application/json",
+    }
+
+    response = None
+    try:
+        try:
+            response = requests.post(
+                OPENAI_RESPONSES_URL,
+                data=json.dumps(payload),
+                headers=headers,
+                timeout=45,
+            )
+        except TypeError:
+            response = requests.post(
+                OPENAI_RESPONSES_URL,
+                data=json.dumps(payload),
+                headers=headers,
+            )
+
+        status_code = getattr(response, "status_code", 0)
+        print("[ChatGPT] OpenAI status:", status_code)
+        if status_code and status_code >= 400:
+            error_msg = ""
+            try:
+                err = response.json().get("error", {})
+                if isinstance(err, dict):
+                    error_msg = err.get("message", "")
+            except Exception:
+                pass
+            if error_msg:
+                print("[ChatGPT] API error:", error_msg)
+                return "API error: " + error_msg
+            return "API error: " + str(status_code)
+
+        body = response.json()
+        error_info = body.get("error")
+        if isinstance(error_info, dict):
+            return "API error: " + error_info.get("message", "unknown")
+
+        reply = _extract_response_text(body).strip()
+        if not reply:
+            print("[ChatGPT] Empty API response payload:", body)
+            return "No response from API."
+
+        return _truncate_to_words(reply, 50)
+    except Exception as err:
+        print("[ChatGPT] Request failed:", err)
+        return "Request failed: " + str(err)
+    finally:
+        try:
+            if response is not None:
+                response.close()
+        except Exception:
+            pass
 
 chatgpt_logo_128x64 = bytearray(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80\xe0\xf0\xf8\xf8\x7c\x7c\x3e\x1e\x1f\x1f\x0f\x0f\x0f\x0f\x0f\x1f\x1f\x1e\x3e\xbc\xfc\xf8\xf8\xf0\xe0\xe0\xe0\xe0\xe0\xe0\xe0\xe0\xc0\xc0\xc0\x80\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80\xc0\xe0\xe0\xf0\xf0\xf0\xf8\xfc\xff\xff\xff\x07\x03\x00\x00\x00\x80\xc0\xc0\xe0\xe0\xf0\xf8\xf8\x7c\x7c\x3e\x1e\x1f\x0f\x0f\x07\x07\x03\x03\x83\x01\x01\x01\x01\x01\x03\x03\x03\x07\x0f\x1f\x3f\x7e\xfc\xf8\xf0\xe0\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80\xf0\xfc\xfe\xff\x3f\x0f\x07\x03\x01\x01\x00\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\xff\xff\xff\x03\x01\x81\x80\xc0\xe0\xe0\xf0\xf0\xf8\xf8\x9c\x1c\x0e\x0f\x07\x0f\x0f\x1f\x1e\x3e\x7c\x7c\xf8\xf8\xf0\xe0\xe0\xc0\xc0\x81\xff\xff\xff\xff\x78\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x7f\xff\xff\xff\xe1\x00\x00\x00\x00\x00\x00\x00\xff\xff\xff\xff\xc0\x00\x00\x00\x00\x00\xff\xff\xff\x0f\x07\x07\x03\x01\x01\x00\x00\x01\x01\x03\x07\x07\x0f\xfe\xfe\xfc\x38\x78\x70\xf0\xe0\xe0\xc0\x80\x81\x01\x03\x07\x07\x0f\x1f\x3f\xff\xff\xf8\xf0\xc0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x0f\x1f\xff\xff\xfc\xf8\xf0\xe0\xe0\xc0\x80\x81\x01\x03\x07\x07\x0f\x0e\x1e\x1c\x3f\x7f\x7f\xf0\xe0\xe0\xc0\x80\x80\x00\x00\x80\x80\xc0\xe0\xe0\xf0\xff\xff\xff\x00\x00\x00\x00\x00\x03\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x87\xff\xff\xff\xfe\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0e\xff\xff\xff\xff\x81\x03\x03\x07\x07\x0f\x1f\x1f\x3e\x3e\x7c\x78\xf8\xf0\xf0\xe0\xf0\x70\x78\x39\x1f\x1f\x0f\x0f\x07\x07\x03\x01\x81\x80\xc0\xff\xff\xff\x00\x00\x00\x00\x00\x00\xff\xff\xff\xff\x00\x80\x80\xc0\xe0\xf0\xfc\xff\x7f\x3f\x0f\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x07\x0f\x1f\x3f\x7e\xfc\xf8\xf0\xe0\xc0\xc0\xc0\xc0\x80\x80\x80\x80\xc1\xc0\xc0\xe0\xe0\xf0\xf0\xf8\x78\x7c\x3e\x3e\x1f\x1f\x0f\x07\x07\x03\x03\x01\x00\x00\x00\xc0\xe0\xff\xff\xff\x3f\x1f\x0f\x0f\x0f\x07\x07\x03\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x01\x03\x03\x03\x07\x07\x07\x07\x07\x07\x07\x07\x0f\x1f\x1f\x3f\x3d\x7c\x78\xf8\xf8\xf0\xf0\xf0\xf0\xf0\xf8\xf8\x78\x7c\x3e\x3e\x1f\x1f\x0f\x07\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
 
@@ -161,8 +300,15 @@ def ChatGPT():
 
             if inp == "ok":
                 entered_prompt = form.inp_list().get("inp_0", " ").strip()
-                last_prompt = entered_prompt if entered_prompt else " "
-                _stream_fake_gpt(LOREM_50_WORDS)
+                if not entered_prompt:
+                    _stream_fake_gpt("Please enter a prompt.")
+                    mode = "response"
+                    continue
+
+                last_prompt = entered_prompt
+                form_refresh.refresh(state="Thinking...")
+                gpt_reply = _call_openai(entered_prompt)
+                _stream_fake_gpt(gpt_reply)
                 mode = "response"
                 continue
 
