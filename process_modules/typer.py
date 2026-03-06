@@ -3,6 +3,7 @@ from sleeping_features import test_deep_sleep_awake, swdt
 import time
 import machine
 from machine import Pin
+from process_modules.navigation import request_navigation_from_key
 
 try:
     import esp32
@@ -205,6 +206,8 @@ class Typer:
             swdt.feed()
             if text == "off":
                 test_deep_sleep_awake()
+            if text in ("home", "settings", "back"):
+                request_navigation_from_key(text)
             return text
         except Exception:
             swdt.stop()
