@@ -10,13 +10,10 @@ These apps expose **device configuration** and system status screens. Most use m
 - **`battery_status.py`** – Battery status information.
 - **`contrast.py`** – Display contrast adjustment.
 - **`dark_mode.py`** – Dark mode toggle (if supported).
-- **`download_updates.py`** – Download firmware/app updates.
 - **`mac_address.py`** – Show device MAC address.
-- **`network_status.py`** – Wi‑Fi network status view.
 - **`sleep_after.py`** – Sleep timer configuration.
 - **`update.py`** – Update manager.
-- **`wifi_app.py`** – Wi‑Fi app entry menu.
-- **`wifi_autoconnect.py`** – Auto‑connect settings.
+- **`wifi_center.py`** – Unified Wi‑Fi center (status, connect/disconnect, auto‑connect, saved networks).
 - **`wifi_connector.py`** – SSID/password connect UI.
 
 ## How to use
