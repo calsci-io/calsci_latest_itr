@@ -166,7 +166,16 @@ def _scan_networks():
 
 def _show_menu(lines, state="Wi-Fi"):
     display.clear_display()
-    menu.menu_list = lines
+    cols = int(getattr(menu, "cols", 21))
+    if cols < 1:
+        cols = 1
+    safe_lines = []
+    for line in lines:
+        line_s = str(line)
+        if len(line_s) > cols:
+            line_s = line_s[: cols - 1] + "~" if cols > 1 else line_s[:1]
+        safe_lines.append(line_s)
+    menu.menu_list = safe_lines
     menu.update()
     menu_refresh.refresh(state=state)
 
@@ -236,9 +245,7 @@ def _select_network():
         else:
             options.append(("empty", "No networks found"))
 
-        menu.menu_list = [row[1] for row in options]
-        menu.update()
-        menu_refresh.refresh(state=nav.current_state())
+        _show_menu([row[1] for row in options], state=nav.current_state())
 
         while True:
             inp = typer.start_typing()
@@ -298,6 +305,60 @@ def _prompt_password(ssid, default_password="", action_label="Connect"):
         form_refresh.refresh(state=nav.current_state())
 
 
+def _saved_network_detail_flow(ssid):
+    while True:
+        password = _get_saved_password(ssid)
+        password_view = password if password else "<empty>"
+
+        options = [
+            ("ssid", "SSID: " + ssid),
+            ("pwd", "Password: " + password_view),
+            ("connect", "Connect"),
+            ("edit", "Edit Password"),
+            ("forget", "Forget Network"),
+            ("back", "Back"),
+        ]
+        _show_menu([row[1] for row in options], state=nav.current_state())
+
+        while True:
+            inp = typer.start_typing()
+            if inp == "ok":
+                detail_action = options[menu.menu_cursor][0]
+
+                if detail_action == "ssid":
+                    _toast(["SSID", ssid], hold_ms=900)
+                    break
+                if detail_action == "pwd":
+                    _toast(["Password", password_view], hold_ms=1000)
+                    break
+                if detail_action == "connect":
+                    _show_menu(["Connecting to:", ssid])
+                    if _connect_to_wifi(ssid, password):
+                        _toast(["Connected:", ssid], hold_ms=900)
+                    else:
+                        _toast(["Failed to connect", ssid], hold_ms=900)
+                    break
+                if detail_action == "edit":
+                    new_password = _prompt_password(ssid, password, action_label="Save")
+                    if new_password is not None:
+                        _upsert_saved_wifi(ssid, new_password)
+                        _toast(["Password saved", ssid], hold_ms=700)
+                    break
+                if detail_action == "forget":
+                    _forget_saved_ssid(ssid)
+                    _toast(["Network removed", ssid], hold_ms=700)
+                    return
+                if detail_action == "back":
+                    return
+
+            elif inp == "alpha" or inp == "beta":
+                keypad_state_manager(x=inp)
+                menu.update_buffer("")
+            else:
+                menu.update_buffer(inp)
+            menu_refresh.refresh(state=nav.current_state())
+
+
 def _saved_networks_flow():
     while True:
         saved = _read_saved_wifi()
@@ -324,63 +385,7 @@ def _saved_networks_flow():
                     return
                 if action == "ssid":
                     ssid = chosen[2]
-                    while True:
-                        password = _get_saved_password(ssid)
-                        if password == "" and _get_saved_password(ssid) != "":
-                            password = _get_saved_password(ssid)
-
-                        password_view = password if password else "<empty>"
-                        options_ssid = [
-                            ("ssid", "SSID: " + ssid),
-                            ("pwd", "Password: " + password_view),
-                            ("connect", "Connect"),
-                            ("edit", "Edit Password"),
-                            ("forget", "Forget Network"),
-                            ("back", "Back"),
-                        ]
-
-                        _show_menu(
-                            [row[1] for row in options_ssid], state=nav.current_state()
-                        )
-
-                        while True:
-                            inp_detail = typer.start_typing()
-                            if inp_detail == "ok":
-                                chosen_detail = options_ssid[menu.menu_cursor]
-                                detail_action = chosen_detail[0]
-
-                                if detail_action == "connect":
-                                    _show_menu(["Connecting to:", ssid])
-                                    if _connect_to_wifi(ssid, password):
-                                        _toast(["Connected:", ssid], hold_ms=900)
-                                    else:
-                                        _toast(["Failed to connect", ssid], hold_ms=900)
-                                    break
-                                if detail_action == "edit":
-                                    new_password = _prompt_password(
-                                        ssid, password, action_label="Save"
-                                    )
-                                    if new_password is not None:
-                                        _upsert_saved_wifi(ssid, new_password)
-                                        _toast(["Password saved", ssid], hold_ms=700)
-                                    break
-                                if detail_action == "forget":
-                                    _forget_saved_ssid(ssid)
-                                    _toast(["Network removed", ssid], hold_ms=700)
-                                    break
-                                if detail_action == "back":
-                                    break
-
-                            elif inp_detail == "alpha" or inp_detail == "beta":
-                                keypad_state_manager(x=inp_detail)
-                                menu.update_buffer("")
-                            else:
-                                menu.update_buffer(inp_detail)
-                            menu_refresh.refresh(state=nav.current_state())
-
-                        if detail_action == "forget" or detail_action == "back":
-                            break
-
+                    _saved_network_detail_flow(ssid)
                     break
             elif inp == "alpha" or inp == "beta":
                 keypad_state_manager(x=inp)
@@ -409,9 +414,7 @@ def wifi_center(db={}):
             ("back", "Back to Settings"),
         ]
 
-        menu.menu_list = [row[1] for row in options]
-        menu.update()
-        menu_refresh.refresh(state=nav.current_state())
+        _show_menu([row[1] for row in options], state=nav.current_state())
 
         while True:
             inp = typer.start_typing()
