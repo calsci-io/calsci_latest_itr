@@ -204,8 +204,9 @@ class Typer:
             self._handle_live_switch_shortcut(row=row, col=col)
             text = self.keypad_map.key_out(col=col, row=row)
             swdt.feed()
-            if text == "off":
+            if text in ("off", "on"):
                 test_deep_sleep_awake()
+                return "off"
             if text in ("home", "settings", "back"):
                 request_navigation_from_key(text)
             return text
