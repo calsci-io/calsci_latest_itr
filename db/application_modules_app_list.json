@@ -20,6 +20,11 @@
         "visibility": true
     },
     {
+        "name": "stream_deck",
+        "folder": "application_modules",
+        "visibility": true
+    },
+    {
         "name": "installed_apps",
         "folder": "application_modules",
         "visibility": true

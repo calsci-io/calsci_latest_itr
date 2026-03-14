@@ -1,0 +1,6 @@
+{
+    "server_ip": "",
+    "server_port": 4545,
+    "timeout_ms": 700,
+    "secret": ""
+}
