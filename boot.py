@@ -121,7 +121,7 @@ backlight_pin.on() #2.9
 # from test_async import main
 # asyncio.run(main())
 import builtins
-from data_modules.object_handler import text, menu, form, text_refresh, menu_refresh, form_refresh, typer, data_bucket
+from data_modules.object_handler import text, menu, form, text_refresh, menu_refresh, form_refresh, typer, data_bucket, keyin
 builtins.display=display
 builtins.text=text
 builtins.menu=menu
@@ -130,6 +130,7 @@ builtins.text_refresh=text_refresh
 builtins.text_refresh=menu_refresh
 builtins.text_refresh=form_refresh
 builtins.typer=typer
+builtins.keyin=keyin
 
 
 
@@ -137,3 +138,85 @@ builtins.typer=typer
 builtins.sta_if = None
 data_bucket["connection_status_g"] = False
 data_bucket["ssid_g"] = ""
+
+
+def _hyb_ping(token):
+    print("ECHO:%s" % str(token).strip())
+
+
+def _hyb_key(col, row):
+    try:
+        col = int(col)
+        row = int(row)
+        if not keyin.inject_key(col, row):
+            print("HYBRID_KEY_ERR:RANGE")
+            return
+        print("HYBRID_KEY_OK:%d,%d" % (col, row))
+    except Exception as exc:
+        print("HYBRID_KEY_ERR:%s" % exc)
+
+
+def _hyb_emit_state(last_frame=-1, force_full=False):
+    try:
+        try:
+            import ujson as _json
+        except Exception:
+            import json as _json
+        import ubinascii as _binascii
+
+        try:
+            last_frame = int(last_frame)
+        except Exception:
+            last_frame = -1
+
+        frame_id = int(hybrid_sim.frame_id())
+        state = {
+            "fb_seen": True,
+            "frame_id": frame_id,
+            "fb_seq": frame_id & 0x7F,
+        }
+        if force_full or last_frame < 0 or hybrid_sim.changed_since(last_frame):
+            fb = hybrid_sim.read_fb()
+            if not isinstance(fb, (bytes, bytearray)):
+                fb = bytes(fb)
+            state["fb_full"] = True
+            state["fb"] = _binascii.b2a_base64(fb).decode().strip()
+        print("STATE:%s" % _json.dumps(state))
+    except Exception as exc:
+        print("HYBRID_SYNC_ERR:%s" % exc)
+
+
+def _hyb_poll_state(last_frame=-1):
+    _hyb_emit_state(last_frame, False)
+
+
+def _hyb_sync_full():
+    _hyb_emit_state(-1, True)
+
+
+def _hyb_emit_hybrid_config():
+    try:
+        debounce_ms = int(float(getattr(typer, "debounce_delay_time", 0.1)) * 1000)
+        if debounce_ms > 0:
+            print("HYB_KEY_DEB_MS:%d" % debounce_ms)
+    except Exception:
+        pass
+
+    try:
+        graph_sec = data_bucket.get("hyb_graph_fast_debounce_sec", None)
+        if graph_sec is None:
+            graph_sec = 0.001
+            data_bucket["hyb_graph_fast_debounce_sec"] = graph_sec
+        graph_ms = int(float(graph_sec) * 1000)
+        if graph_ms > 0:
+            print("HYB_GRAPH_FAST_MS:%d" % graph_ms)
+    except Exception:
+        pass
+
+
+try:
+    import hybrid_sim
+
+    hybrid_sim.enable(True)
+except Exception as e:
+    print("HYBRID_INIT_ERR:", e)
