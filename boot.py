@@ -112,107 +112,16 @@ def _switch_to(label, name):
     except Exception as e:
         print("Error switching to", label, ":", e)
 # --- End Triple Boot System ---
-from apps.settings.backlight import apply_saved_backlight
-apply_saved_backlight()
+from apps.settings.backlight import backlight_pin
+# backlight_pin.off() #3.0
+backlight_pin.on() #2.9
 # from test_thread import run_thread
 # run_thread()
 # import uasyncio as asyncio
 # from test_async import main
 # asyncio.run(main())
 import builtins
-import sys as _boot_sys
-
-_hyb_graphics_hook = None
-_hyb_set_page_hook = None
-_hyb_set_col_hook = None
-_hyb_write_data_hook = None
-_hyb_clear_hook = None
-
-
-class _HybridDisplayProxy:
-    def __init__(self, real_mod):
-        self._real_mod = real_mod
-        self.__name__ = "st7565"
-
-    def __setattr__(self, name, value):
-        if name in ("_real_mod", "__name__"):
-            object.__setattr__(self, name, value)
-            return
-
-        # Keep bridge interception active even if app code tries to monkey-patch.
-        if name in (
-            "graphics",
-            "set_page_address",
-            "set_column_address",
-            "write_data",
-            "clear_display",
-        ):
-            return
-
-        try:
-            setattr(self._real_mod, name, value)
-        except Exception:
-            object.__setattr__(self, name, value)
-
-    def __getattr__(self, name):
-        return getattr(self._real_mod, name)
-
-    def init(self, *args, **kwargs):
-        return self._real_mod.init(*args, **kwargs)
-
-    def set_page_address(self, page):
-        hook = _hyb_set_page_hook
-        if hook is not None:
-            try:
-                hook(page)
-            except Exception:
-                pass
-        return self._real_mod.set_page_address(page)
-
-    def set_column_address(self, col):
-        hook = _hyb_set_col_hook
-        if hook is not None:
-            try:
-                hook(col)
-            except Exception:
-                pass
-        return self._real_mod.set_column_address(col)
-
-    def write_data(self, value):
-        hook = _hyb_write_data_hook
-        if hook is not None:
-            try:
-                hook(value)
-            except Exception:
-                pass
-        return self._real_mod.write_data(value)
-
-    def graphics(self, buf, *args, **kwargs):
-        hook = _hyb_graphics_hook
-        if hook is not None:
-            try:
-                hook(buf, args, kwargs)
-            except Exception:
-                pass
-        return self._real_mod.graphics(buf, *args, **kwargs)
-
-    def clear_display(self):
-        hook = _hyb_clear_hook
-        if hook is not None:
-            try:
-                hook()
-            except Exception:
-                pass
-        return self._real_mod.clear_display()
-
-try:
-    _hyb_display_proxy = _HybridDisplayProxy(display)
-    _boot_sys.modules["st7565"] = _hyb_display_proxy
-    display = _hyb_display_proxy
-except Exception:
-    pass
-
-from data_modules.object_handler import text, menu, form, nav, text_refresh, menu_refresh, form_refresh, typer, data_bucket
+from data_modules.object_handler import text, menu, form, text_refresh, menu_refresh, form_refresh, typer, data_bucket, keyin
 builtins.display=display
 builtins.text=text
 builtins.menu=menu
@@ -221,6 +130,7 @@ builtins.text_refresh=text_refresh
 builtins.text_refresh=menu_refresh
 builtins.text_refresh=form_refresh
 builtins.typer=typer
+builtins.keyin=keyin
 
 
 
@@ -229,516 +139,84 @@ builtins.sta_if = None
 data_bucket["connection_status_g"] = False
 data_bucket["ssid_g"] = ""
 
-# Hybrid keypad debounce profile:
-# - global stable delay for menus/general typing
-# - graph app can temporarily switch to fast poll while cursor/tools are inactive
-try:
-    _HYB_GLOBAL_DEBOUNCE_SEC = 0.100
-    typer.debounce_delay_time = _HYB_GLOBAL_DEBOUNCE_SEC
-    data_bucket["hyb_global_debounce_sec"] = _HYB_GLOBAL_DEBOUNCE_SEC
-except Exception:
-    data_bucket["hyb_global_debounce_sec"] = None
-data_bucket["hyb_graph_fast_debounce_sec"] = 0.001
 
-# ------------------------------------------------------------
-# Hybrid serial bridge (test-only, no firmware rebuild needed)
-# Input protocol (text):
-#   PING:<msg>      -> ECHO:<msg>
-#   KEY:<col>,<row> -> inject key into keypad loop
-# Output protocol (binary framed + CRC16):
-#   magic(2) + type(1) + flags(1) + len(2) + payload + crc16(2)
-# ------------------------------------------------------------
-try:
-    import sys
-    import time as _pytime
-    import _thread
+def _hyb_ping(token):
+    print("ECHO:%s" % str(token).strip())
 
+
+def _hyb_key(col, row):
     try:
-        import uselect as _uselect
-    except Exception:
-        _uselect = None
+        col = int(col)
+        row = int(row)
+        if not keyin.inject_key(col, row):
+            print("HYBRID_KEY_ERR:RANGE")
+            return
+        print("HYBRID_KEY_OK:%d,%d" % (col, row))
+    except Exception as exc:
+        print("HYBRID_KEY_ERR:%s" % exc)
 
+
+def _hyb_emit_state(last_frame=-1, force_full=False):
     try:
+        try:
+            import ujson as _json
+        except Exception:
+            import json as _json
         import ubinascii as _binascii
-    except Exception:
-        import binascii as _binascii
 
+        try:
+            last_frame = int(last_frame)
+        except Exception:
+            last_frame = -1
+
+        frame_id = int(hybrid_sim.frame_id())
+        state = {
+            "fb_seen": True,
+            "frame_id": frame_id,
+            "fb_seq": frame_id & 0x7F,
+        }
+        if force_full or last_frame < 0 or hybrid_sim.changed_since(last_frame):
+            fb = hybrid_sim.read_fb()
+            if not isinstance(fb, (bytes, bytearray)):
+                fb = bytes(fb)
+            state["fb_full"] = True
+            state["fb"] = _binascii.b2a_base64(fb).decode().strip()
+        print("STATE:%s" % _json.dumps(state))
+    except Exception as exc:
+        print("HYBRID_SYNC_ERR:%s" % exc)
+
+
+def _hyb_poll_state(last_frame=-1):
+    _hyb_emit_state(last_frame, False)
+
+
+def _hyb_sync_full():
+    _hyb_emit_state(-1, True)
+
+
+def _hyb_emit_hybrid_config():
     try:
-        import ujson as _json
-    except Exception:
-        import json as _json
-
-    try:
-        import utime as _utime
-    except Exception:
-        _utime = None
-
-    _hyb_key_queue = []
-    _hyb_fb = bytearray(1024)
-    _hyb_prev_fb = bytearray(1024)
-    _hyb_cur_page = 0
-    _hyb_cur_col = 0
-    _hyb_dirty = True
-    _hyb_force_full = True
-    _hyb_fb_seen = False
-    _hyb_last_emit = 0
-    _hyb_last_full_emit = 0
-    _hyb_frame_seq = 0
-    _hyb_last_heartbeat = 0
-    _hyb_emit_dirty_ms = 1
-    _hyb_heartbeat_ms = 1
-    _hyb_periodic_full_ms = 1
-    _hyb_tx_lock = _thread.allocate_lock()
-
-    _HYB_MAGIC0 = 0xCA
-    _HYB_MAGIC1 = 0x1C
-    _HYB_PKT_FULL = 1
-    _HYB_PKT_HEARTBEAT = 5
-
-    _hyb_out = None
-    _hyb_binary_ok = False
-
-    def _hyb_ticks_ms():
-        if _utime is not None and hasattr(_utime, "ticks_ms"):
-            return _utime.ticks_ms()
-        return int(_pytime.time() * 1000)
-
-    def _hyb_ticks_diff(a, b):
-        if _utime is not None and hasattr(_utime, "ticks_diff"):
-            return _utime.ticks_diff(a, b)
-        return a - b
-
-    def _hyb_sleep_ms(ms):
-        if _utime is not None and hasattr(_utime, "sleep_ms"):
-            _utime.sleep_ms(ms)
-        else:
-            _pytime.sleep(ms / 1000.0)
-
-    def _hyb_write_line(text):
-        try:
-            _hyb_tx_lock.acquire()
-            sys.stdout.write(text + "\n")
-            sys.stdout.flush()
-        except Exception:
-            pass
-        finally:
-            try:
-                _hyb_tx_lock.release()
-            except Exception:
-                pass
-
-    def _hyb_init_output_stream():
-        global _hyb_out, _hyb_binary_ok
-        _hyb_out = None
-        _hyb_binary_ok = False
-        # Keep bridge in text/JSON mode for stable compatibility.
-        _hyb_out = sys.stdout
-
-    def _hyb_crc16(raw):
-        crc = 0xFFFF
-        for b in raw:
-            if not isinstance(b, int):
-                b = ord(b)
-            crc ^= (b << 8)
-            for _ in range(8):
-                if crc & 0x8000:
-                    crc = ((crc << 1) ^ 0x1021) & 0xFFFF
-                else:
-                    crc = (crc << 1) & 0xFFFF
-        return crc
-
-    def _hyb_write_raw(data):
-        global _hyb_binary_ok
-        if not _hyb_binary_ok:
-            return False
-        try:
-            _hyb_tx_lock.acquire()
-            _hyb_out.write(data)
-            return True
-        except Exception:
-            _hyb_binary_ok = False
-            return False
-        finally:
-            try:
-                _hyb_tx_lock.release()
-            except Exception:
-                pass
-
-    def _hyb_send_packet(pkt_type, flags, payload):
-        if payload is None:
-            payload = b""
-        try:
-            plen = len(payload)
-        except Exception:
-            plen = 0
-            payload = b""
-        if plen > 2048:
-            return False
-
-        frame = bytearray(6 + plen + 2)
-        frame[0] = _HYB_MAGIC0
-        frame[1] = _HYB_MAGIC1
-        frame[2] = pkt_type & 0xFF
-        frame[3] = flags & 0xFF
-        frame[4] = plen & 0xFF
-        frame[5] = (plen >> 8) & 0xFF
-        if plen > 0:
-            frame[6 : 6 + plen] = payload
-        crc = _hyb_crc16(frame[2 : 6 + plen])
-        frame[6 + plen] = crc & 0xFF
-        frame[7 + plen] = (crc >> 8) & 0xFF
-        return _hyb_write_raw(frame)
-
-    def _hyb_fb_flags(seq):
-        flags = (int(seq) & 0x7F) << 1
-        if _hyb_fb_seen:
-            flags |= 0x01
-        return flags
-
-    def _hyb_send_full_frame(seq):
-        global _hyb_last_full_emit
-        flags = _hyb_fb_flags(seq)
-        if not _hyb_send_packet(_HYB_PKT_FULL, flags, bytes(_hyb_fb)):
-            return False
-        _hyb_prev_fb[:] = _hyb_fb
-        _hyb_last_full_emit = _hyb_ticks_ms()
-        return True
-
-    def _hyb_emit_state_text():
-        try:
-            has_pixels = False
-            for _b in _hyb_fb:
-                if _b:
-                    has_pixels = True
-                    break
-            if has_pixels:
-                raw = _binascii.b2a_base64(_hyb_fb)
-                if isinstance(raw, bytes):
-                    raw = raw.decode().strip()
-            else:
-                raw = ""
-            payload = {
-                "fb": raw,
-                "fb_seen": _hyb_fb_seen,
-            }
-            _hyb_write_line("STATE:" + _json.dumps(payload))
-            _hyb_prev_fb[:] = _hyb_fb
-            return True
-        except Exception:
-            return False
-
-    def _hyb_emit_state(force=False):
-        global _hyb_dirty, _hyb_force_full, _hyb_last_emit, _hyb_last_heartbeat
-        global _hyb_last_full_emit, _hyb_frame_seq
-
-        now = _hyb_ticks_ms()
-        periodic_full_due = _hyb_ticks_diff(now, _hyb_last_full_emit) >= _hyb_periodic_full_ms
-        display_changed = _hyb_dirty or _hyb_force_full or force or periodic_full_due
-        heartbeat_due = _hyb_ticks_diff(now, _hyb_last_heartbeat) >= _hyb_heartbeat_ms
-
-        if not force:
-            diff = _hyb_ticks_diff(now, _hyb_last_emit)
-            if display_changed:
-                if diff < _hyb_emit_dirty_ms:
-                    return
-            elif not heartbeat_due:
-                return
-
-        sent_ok = False
-        if _hyb_binary_ok:
-            if display_changed:
-                next_frame_seq = (_hyb_frame_seq + 1) & 0x7F
-                display_sent_ok = _hyb_send_full_frame(next_frame_seq)
-
-                if display_sent_ok:
-                    _hyb_dirty = False
-                    _hyb_force_full = False
-                    _hyb_frame_seq = next_frame_seq
-                    sent_ok = True
-                else:
-                    _hyb_force_full = True
-
-            if heartbeat_due:
-                hb_flags = _hyb_fb_flags(_hyb_frame_seq)
-                _hyb_send_packet(_HYB_PKT_HEARTBEAT, hb_flags, b"")
-                _hyb_last_heartbeat = now
-                sent_ok = True
-        else:
-            # Text mode: stream framebuffer snapshots only when display updates.
-            # This avoids higher-level menu/form/text pre-analysis on device side.
-            if display_changed or force:
-                sent_ok = _hyb_emit_state_text()
-                _hyb_dirty = False
-                _hyb_force_full = False
-                _hyb_last_heartbeat = now
-
-        if sent_ok:
-            _hyb_last_emit = now
-
-    def _hyb_queue_key(col, row):
-        global _hyb_force_full
-        try:
-            col = int(col)
-            row = int(row)
-            if not (0 <= col <= 4 and 0 <= row <= 9):
-                return False
-            _hyb_key_queue.append((col, row))
-            # After key injection, force at least one display sync attempt so host
-            # observes the post-key screen state from the normal keypad logic path.
-            _hyb_force_full = True
-            if len(_hyb_key_queue) > 1:
-                del _hyb_key_queue[:-1]
-            return True
-        except Exception:
-            return False
-
-    # REPL-safe helper: PC can call this over normal serial without raw-repl toggling.
-    def _hyb_key_enqueue(col, row):
-        return _hyb_queue_key(col, row)
-
-    # REPL-safe helper for link checks from PC.
-    def _hyb_ping(msg=""):
-        _hyb_write_line("ECHO:" + str(msg))
-        return True
-
-    def _hyb_set_page(page):
-        global _hyb_cur_page
-        try:
-            _hyb_cur_page = int(page) & 0x07
-        except Exception:
-            _hyb_cur_page = 0
-
-    def _hyb_set_col(col):
-        global _hyb_cur_col
-        try:
-            _hyb_cur_col = int(col) & 0x7F
-        except Exception:
-            _hyb_cur_col = 0
-
-    def _hyb_write_data(value):
-        global _hyb_cur_col, _hyb_dirty, _hyb_fb_seen
-        try:
-            b = int(value) & 0xFF
-            idx = (_hyb_cur_page * 128) + _hyb_cur_col
-            if 0 <= idx < 1024 and _hyb_fb[idx] != b:
-                _hyb_fb[idx] = b
-                _hyb_dirty = True
-            _hyb_fb_seen = True
-            _hyb_cur_col = (_hyb_cur_col + 1) & 0x7F
-        except Exception:
-            pass
-
-    def _hyb_graphics(buf, pos_args=(), kw_args=None):
-        global _hyb_dirty, _hyb_fb_seen
-        try:
-            data = None
-            if isinstance(buf, memoryview):
-                data = buf
-            elif isinstance(buf, (bytes, bytearray)):
-                data = memoryview(buf)
-            elif hasattr(buf, "buf"):
-                data = memoryview(buf.buf)
-            elif hasattr(buf, "buffer"):
-                data = memoryview(buf.buffer)
-            if data is None:
-                return
-
-            page = 0
-            col = 0
-            width = 128
-            pages = 8
-
-            if isinstance(pos_args, (tuple, list)):
-                if len(pos_args) > 0:
-                    page = int(pos_args[0])
-                if len(pos_args) > 1:
-                    col = int(pos_args[1])
-                if len(pos_args) > 2:
-                    width = int(pos_args[2])
-                if len(pos_args) > 3:
-                    pages = int(pos_args[3])
-
-            if isinstance(kw_args, dict):
-                if "page" in kw_args:
-                    page = int(kw_args["page"])
-                if "column" in kw_args:
-                    col = int(kw_args["column"])
-                if "width" in kw_args:
-                    width = int(kw_args["width"])
-                if "pages" in kw_args:
-                    pages = int(kw_args["pages"])
-
-            if page < 0:
-                page = 0
-            if page > 7:
-                page = 7
-            if col < 0:
-                col = 0
-            if col > 127:
-                col = 127
-            if width < 0:
-                width = 0
-            if pages < 0:
-                pages = 0
-            if col + width > 128:
-                width = 128 - col
-            if page + pages > 8:
-                pages = 8 - page
-            if width <= 0 or pages <= 0:
-                return
-
-            expected = width * pages
-            available = len(data)
-            if available <= 0:
-                return
-            if available > expected:
-                available = expected
-
-            changed = False
-            src = 0
-            for p in range(pages):
-                if src >= available:
-                    break
-                dst_base = (page + p) * 128 + col
-                span = width
-                if src + span > available:
-                    span = available - src
-                for x in range(span):
-                    b = data[src + x]
-                    idx = dst_base + x
-                    if _hyb_fb[idx] != b:
-                        _hyb_fb[idx] = b
-                        changed = True
-                src += width
-
-            if changed:
-                _hyb_dirty = True
-            _hyb_fb_seen = True
-        except Exception:
-            pass
-
-    def _hyb_clear():
-        global _hyb_dirty, _hyb_fb_seen
-        try:
-            for i in range(1024):
-                _hyb_fb[i] = 0
-            _hyb_dirty = True
-            _hyb_fb_seen = True
-        except Exception:
-            pass
-
-    _hyb_set_page_hook = _hyb_set_page
-    _hyb_set_col_hook = _hyb_set_col
-    _hyb_write_data_hook = _hyb_write_data
-    _hyb_graphics_hook = _hyb_graphics
-    _hyb_clear_hook = _hyb_clear
-
-    try:
-        if isinstance(cal_sci_buffer, (bytes, bytearray, memoryview)) and len(cal_sci_buffer) >= 1024:
-            _hyb_graphics(cal_sci_buffer)
+        debounce_ms = int(float(getattr(typer, "debounce_delay_time", 0.1)) * 1000)
+        if debounce_ms > 0:
+            print("HYB_KEY_DEB_MS:%d" % debounce_ms)
     except Exception:
         pass
 
-    # Replace keypad loop so host key queue and physical keypad both work.
-    def _hyb_keypad_loop():
-        rows = getattr(typer.keypad, "rows", [])
-        cols = getattr(typer.keypad, "cols", [])
-        while True:
-            if _hyb_key_queue:
-                return _hyb_key_queue.pop(0)
-            for row in range(len(rows)):
-                machine.Pin(rows[row], machine.Pin.OUT).value(0)
-                hit = None
-                for col in range(len(cols)):
-                    if machine.Pin(cols[col], machine.Pin.IN, machine.Pin.PULL_UP).value() == 0:
-                        hit = (col, row)
-                        break
-                machine.Pin(rows[row], machine.Pin.OUT).value(1)
-                if hit is not None:
-                    return hit
-            _hyb_sleep_ms(5)
-
-    typer.keypad.keypad_loop = _hyb_keypad_loop
-
-    def _hyb_handle_line(line):
-        if not line:
-            return
-        if line.startswith("PING:"):
-            msg = line[5:].strip()
-            _hyb_write_line("ECHO:" + msg)
-            return
-        if line == "SYNC:FULL":
-            try:
-                global _hyb_force_full
-                _hyb_force_full = True
-                _hyb_emit_state(True)
-            except Exception:
-                pass
-            _hyb_write_line("ECHO:SYNCFULL")
-            return
-        if line.startswith("KEY:"):
-            raw = line[4:].strip()
-            parts = raw.split(",")
-            if len(parts) == 2:
-                _hyb_queue_key(parts[0], parts[1])
-            return
-        _hyb_write_line("ECHO:" + line)
-
-    def _hyb_stdin_worker():
-        line_buf = ""
-        while True:
-            try:
-                ch = sys.stdin.read(1)
-                if ch is None or ch == "":
-                    _hyb_sleep_ms(2)
-                    continue
-                if isinstance(ch, bytes):
-                    ch = ch.decode()
-                if ch == "\r" or ch == "\n":
-                    if line_buf:
-                        _hyb_handle_line(line_buf)
-                        line_buf = ""
-                elif len(line_buf) < 128:
-                    line_buf += ch
-                else:
-                    line_buf = ""
-            except Exception:
-                _hyb_sleep_ms(10)
-
-    def _hyb_state_worker():
-        while True:
-            _hyb_emit_state(False)
-            _hyb_sleep_ms(1)
-
-    _hyb_init_output_stream()
-    if _hyb_binary_ok:
-        _hyb_write_line("HYBRID_PROTO:BIN1")
-    else:
-        _hyb_write_line("HYBRID_PROTO:TXT")
     try:
-        _deb_ms = int(float(getattr(typer, "debounce_delay_time", 0.100)) * 1000)
-        if _deb_ms > 0:
-            _hyb_write_line("HYB_KEY_DEB_MS:%d" % _deb_ms)
+        graph_sec = data_bucket.get("hyb_graph_fast_debounce_sec", None)
+        if graph_sec is None:
+            graph_sec = 0.001
+            data_bucket["hyb_graph_fast_debounce_sec"] = graph_sec
+        graph_ms = int(float(graph_sec) * 1000)
+        if graph_ms > 0:
+            print("HYB_GRAPH_FAST_MS:%d" % graph_ms)
     except Exception:
         pass
-    try:
-        _fast_sec = data_bucket.get("hyb_graph_fast_debounce_sec", None)
-        if _fast_sec is not None:
-            _fast_ms = int(float(_fast_sec) * 1000)
-            if _fast_ms > 0:
-                _hyb_write_line("HYB_GRAPH_FAST_MS:%d" % _fast_ms)
-    except Exception:
-        pass
-    _hyb_write_line("HYBRID_READY")
-    _hyb_write_line("HYBRID_BAUD:2000000")
-    _thread.start_new_thread(_hyb_stdin_worker, ())
-    _thread.start_new_thread(_hyb_state_worker, ())
-    _hyb_emit_state(True)
 
-except Exception as _hyb_exc:
-    print("HYBRID_BRIDGE_ERR:", _hyb_exc)
-    try:
-        import sys as _sys
-        _sys.print_exception(_hyb_exc)
-    except Exception:
-        pass
+
+try:
+    import hybrid_sim
+
+    hybrid_sim.enable(True)
+except Exception as e:
+    print("HYBRID_INIT_ERR:", e)

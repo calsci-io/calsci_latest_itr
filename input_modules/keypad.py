@@ -46,11 +46,6 @@ except Exception:
 from machine import Pin  # type: ignore      ###########2.9
 import utime as time #type: ignore
 
-try:
-    import calsci_runtime
-except ImportError:
-    calsci_runtime = None
-
 PRINT_KEYPAD_PRESSES = False
 
 
@@ -67,6 +62,7 @@ class Keypad:
     def __init__(self, rows, cols):
         self.rows=rows
         self.cols=cols
+        self._injected_keys = []
         for pin in cols:
             Pin(pin, Pin.IN, Pin.PULL_UP)
 
@@ -75,18 +71,40 @@ class Keypad:
             p = Pin(pin, Pin.OUT)
             p.value(1)
         self.state=True
+
+    def inject_key(self, col, row):
+        try:
+            col = int(col)
+            row = int(row)
+        except Exception:
+            return False
+
+        if row < 0 or row >= len(self.rows):
+            return False
+        if col < 0 or col >= len(self.cols):
+            return False
+
+        self._injected_keys.append((col, row))
+        return True
+
+    def _take_injected_key(self):
+        if not self._injected_keys:
+            return None
+        key = self._injected_keys[0]
+        del self._injected_keys[0]
+        return key
+
     def keypad_loop(self):    
         # global numRows, rowPins, numCols, colPins, graph_letters
         while self.state==True:
-            if calsci_runtime is not None:
-                calsci_runtime.wait_if_repl_busy()
+            injected = self._take_injected_key()
+            if injected is not None:
+                if PRINT_KEYPAD_PRESSES:
+                    print(injected)
+                return injected
             for row in range(len(self.rows)):
-                if calsci_runtime is not None:
-                    calsci_runtime.wait_if_repl_busy()
                 Pin(self.rows[row], Pin.OUT).value(0)
                 for col in range(len(self.cols)):
-                    if calsci_runtime is not None:
-                        calsci_runtime.wait_if_repl_busy()
                     buttonState = Pin(self.cols[col], Pin.IN, Pin.PULL_UP).value()
                     
                     if buttonState == 0:
