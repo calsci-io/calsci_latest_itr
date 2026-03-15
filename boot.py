@@ -272,6 +272,7 @@ try:
     import hybrid_sim
 
     _hyb_key_queue = []
+    _HYB_WRITE_CHUNK = 192
 
     def _hyb_global(name):
         try:
@@ -287,13 +288,32 @@ try:
 
     def _hyb_write_line(text):
         text = str(text)
+        payload = text + "\n"
+        wrote_any = False
         try:
-            sys.stdout.write(text + "\n")
+            idx = 0
+            total = len(payload)
+            while idx < total:
+                piece = payload[idx : idx + _HYB_WRITE_CHUNK]
+                wrote = sys.stdout.write(piece)
+                wrote_any = True
+                if wrote is None:
+                    wrote = len(piece)
+                try:
+                    wrote = int(wrote)
+                except Exception:
+                    wrote = len(piece)
+                if wrote <= 0:
+                    wrote = len(piece)
+                idx += min(len(piece), wrote)
+                if idx < total:
+                    _hyb_sleep_ms(0)
         except Exception:
-            try:
-                print(text)
-            except Exception:
-                pass
+            if not wrote_any:
+                try:
+                    print(text)
+                except Exception:
+                    pass
 
     def _hyb_clean_line(text):
         try:
