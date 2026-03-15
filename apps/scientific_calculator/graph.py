@@ -18,6 +18,7 @@ import utime as time  # type:ignore
 
 from data_modules.object_handler import (
     current_app,
+    data_bucket,
     display,
     form,
     form_refresh,
@@ -58,7 +59,7 @@ BOTTOM_PAGE_INDEX = DISPLAY_PAGES - 1
 ZOOM_IN_FACTOR = 0.9
 ZOOM_OUT_FACTOR = 1.1
 PAN_SHIFT_FACTOR = 0.09       #  set 
-INPUT_POLL_MS = 0.5
+INPUT_POLL_MS = 1.0
 INPUT_POLL_SEC = INPUT_POLL_MS / 1000.0
 FAST_POLL_RESUME_DELAY_MS = 500
 
@@ -66,6 +67,27 @@ FAST_POLL_RESUME_DELAY_MS = 500
 SAMPLES_PER_PX_MIN = 5
 SAMPLES_PER_PX_MAX = 100
 EVAL_ABS_CLAMP = 1e10
+MIN_AXIS_SPAN = 1e-6
+MAX_EXPR_LEN = 96
+MAX_BOUND_EXPR_LEN = 48
+DEFAULT_EXPRESSION = "x*sin(x)"
+DEFAULT_BOUNDS = {
+    "x_min": -20.0,
+    "x_max": 20.0,
+    "y_min": -10.0,
+    "y_max": 10.0,
+}
+GRID_MAJOR_STEP_X = 16
+GRID_MAJOR_STEP_Y = 8
+GRID_DOT_SKIP = 2
+AUTO_FIT_Y_SAMPLES = 192
+AUTO_FIT_Y_PADDING = 0.12
+
+_ALLOWED_EXPR_CHARS = (
+    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+    "+-*/()., ^"
+)
+_DENY_EXPR_TOKENS = ("__", "import", "lambda", "class", "def", "while", "for")
 
 # Reused tiny buffers for partial column updates.
 _CURSOR_COL_BUF_A = bytearray(PLOT_PAGES)
@@ -106,6 +128,112 @@ EVAL_GLOBALS = {
     "pi": math.pi,
     "e": math.e,
 }
+_SCALAR_EVAL_GLOBALS = EVAL_GLOBALS.copy()
+
+
+def _normalize_expression_text(expression, max_len=MAX_EXPR_LEN):
+    if expression is None:
+        return None
+    if not isinstance(expression, str):
+        expression = str(expression)
+
+    normalized = expression.strip()
+    if not normalized:
+        return None
+    if len(normalized) > max_len:
+        return None
+
+    normalized = normalized.replace("^", "**")
+    for token in _DENY_EXPR_TOKENS:
+        if token in normalized:
+            return None
+
+    for ch in normalized:
+        if ch not in _ALLOWED_EXPR_CHARS:
+            return None
+
+    return normalized
+
+
+def _is_finite_number(value):
+    if isinstance(value, bool):
+        return False
+    if not isinstance(value, (int, float)):
+        return False
+    if value != value:
+        return False
+    if value > EVAL_ABS_CLAMP or value < -EVAL_ABS_CLAMP:
+        return False
+    return True
+
+
+def _coerce_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        parsed = value.strip().lower()
+        if parsed in ("1", "true", "yes", "on"):
+            return True
+        if parsed in ("0", "false", "no", "off", ""):
+            return False
+    if value is None:
+        return default
+    return bool(value)
+
+
+def _normalize_axis_pair(v0, v1):
+    if v0 > v1:
+        v0, v1 = v1, v0
+
+    span = v1 - v0
+    if span < MIN_AXIS_SPAN:
+        center = (v0 + v1) * 0.5
+        half = MIN_AXIS_SPAN * 0.5
+        v0 = center - half
+        v1 = center + half
+    return v0, v1
+
+
+def _normalize_bounds(bounds):
+    x_min, x_max = _normalize_axis_pair(float(bounds["x_min"]), float(bounds["x_max"]))
+    y_min, y_max = _normalize_axis_pair(float(bounds["y_min"]), float(bounds["y_max"]))
+    return {
+        "x_min": x_min,
+        "x_max": x_max,
+        "y_min": y_min,
+        "y_max": y_max,
+    }
+
+
+def _clone_bounds(bounds):
+    return {
+        "x_min": float(bounds["x_min"]),
+        "x_max": float(bounds["x_max"]),
+        "y_min": float(bounds["y_min"]),
+        "y_max": float(bounds["y_max"]),
+    }
+
+
+def _default_bounds():
+    return _clone_bounds(DEFAULT_BOUNDS)
+
+
+def _eval_scalar_expression(expression):
+    normalized = _normalize_expression_text(expression, max_len=MAX_BOUND_EXPR_LEN)
+    if normalized is None:
+        raise ValueError("Invalid bound expression")
+
+    try:
+        compiled = compile(normalized, "<graph_bound_expr>", "eval")
+        value = eval(compiled, _SCALAR_EVAL_GLOBALS)
+    except Exception as exc:
+        raise ValueError("Invalid bound expression") from exc
+
+    if not _is_finite_number(value):
+        raise ValueError("Bound out of supported range")
+    return float(value)
 
 
 class MediumDigits:
@@ -429,12 +557,16 @@ def _samples_per_px_for_view(x_range):
 
 
 def _make_eval_fn(expression):
+    normalized_expression = _normalize_expression_text(expression, max_len=MAX_EXPR_LEN)
+    if normalized_expression is None:
+        return None
+
     try:
-        compiled = compile(expression, "<graph_expr>", "eval")
+        compiled = compile(normalized_expression, "<graph_expr>", "eval")
     except Exception:
         return None
 
-    env = EVAL_GLOBALS
+    env = EVAL_GLOBALS.copy()
 
     def _eval_x(x_value):
         env["x"] = x_value
@@ -445,53 +577,61 @@ def _make_eval_fn(expression):
 
 def get_eval_fn(expression):
     global _EVAL_CACHE_EXPR, _EVAL_CACHE_FN
-    if expression != _EVAL_CACHE_EXPR:
-        _EVAL_CACHE_EXPR = expression
-        _EVAL_CACHE_FN = _make_eval_fn(expression)
+    normalized_expression = _normalize_expression_text(expression, max_len=MAX_EXPR_LEN)
+    if normalized_expression is None:
+        return None
+    if normalized_expression != _EVAL_CACHE_EXPR:
+        _EVAL_CACHE_EXPR = normalized_expression
+        _EVAL_CACHE_FN = _make_eval_fn(normalized_expression)
     return _EVAL_CACHE_FN
 
 
 def safe_eval(eval_fn, x_value):
     try:
         y_value = eval_fn(x_value)
-        if y_value != y_value:
+        if not _is_finite_number(y_value):
             return None
-        if y_value > EVAL_ABS_CLAMP or y_value < -EVAL_ABS_CLAMP:
-            return None
-        return y_value
+        return float(y_value)
     except Exception:
         return None
 
 
 def get_bounds():
-    return {
-        "x_min": eval(form.inp_list()["inp_1"], EVAL_GLOBALS),
-        "x_max": eval(form.inp_list()["inp_2"], EVAL_GLOBALS),
-        "y_min": eval(form.inp_list()["inp_3"], EVAL_GLOBALS),
-        "y_max": eval(form.inp_list()["inp_4"], EVAL_GLOBALS),
+    inputs = form.inp_list()
+    parsed = {
+        "x_min": _eval_scalar_expression(inputs["inp_1"]),
+        "x_max": _eval_scalar_expression(inputs["inp_2"]),
+        "y_min": _eval_scalar_expression(inputs["inp_3"]),
+        "y_max": _eval_scalar_expression(inputs["inp_4"]),
     }
+    return _normalize_bounds(parsed)
 
 
 def update_bounds(bounds):
-    form.input_list["inp_1"] = format_number(bounds["x_min"])
-    form.input_list["inp_2"] = format_number(bounds["x_max"])
-    form.input_list["inp_3"] = format_number(bounds["y_min"])
-    form.input_list["inp_4"] = format_number(bounds["y_max"])
+    normalized = _normalize_bounds(bounds)
+    form.input_list["inp_1"] = format_number(normalized["x_min"])
+    form.input_list["inp_2"] = format_number(normalized["x_max"])
+    form.input_list["inp_3"] = format_number(normalized["y_min"])
+    form.input_list["inp_4"] = format_number(normalized["y_max"])
 
 
 def apply_zoom(bounds, factor):
+    if not _is_finite_number(factor) or factor <= 0:
+        factor = 1.0
+
     x_range = bounds["x_max"] - bounds["x_min"]
     y_range = bounds["y_max"] - bounds["y_min"]
     x_center = (bounds["x_min"] + bounds["x_max"]) * 0.5
     y_center = (bounds["y_min"] + bounds["y_max"]) * 0.5
     new_x_range = x_range * factor
     new_y_range = y_range * factor
-    return {
+    updated = {
         "x_min": x_center - (new_x_range * 0.5),
         "x_max": x_center + (new_x_range * 0.5),
         "y_min": y_center - (new_y_range * 0.5),
         "y_max": y_center + (new_y_range * 0.5),
     }
+    return _normalize_bounds(updated)
 
 
 def apply_pan(bounds, direction):
@@ -514,7 +654,78 @@ def apply_pan(bounds, direction):
         delta = x_range * PAN_SHIFT_FACTOR
         out["x_min"] += delta
         out["x_max"] += delta
-    return out
+    return _normalize_bounds(out)
+
+
+def _draw_dotted_vline(fb, x_px, plot_height):
+    if x_px <= 0 or x_px >= (DISPLAY_WIDTH - 1):
+        return
+    for y_px in range(0, plot_height, GRID_DOT_SKIP):
+        fb.pixel(x_px, y_px, 1)
+
+
+def _draw_dotted_hline(fb, y_px, plot_height):
+    if y_px <= 0 or y_px >= (plot_height - 1):
+        return
+    for x_px in range(0, DISPLAY_WIDTH, GRID_DOT_SKIP):
+        fb.pixel(x_px, y_px, 1)
+
+
+def _draw_grid(fb, plot_height):
+    if GRID_MAJOR_STEP_X > 1:
+        for x_px in range(GRID_MAJOR_STEP_X, DISPLAY_WIDTH, GRID_MAJOR_STEP_X):
+            _draw_dotted_vline(fb, x_px, plot_height)
+
+    if GRID_MAJOR_STEP_Y > 1:
+        for y_px in range(GRID_MAJOR_STEP_Y, plot_height, GRID_MAJOR_STEP_Y):
+            _draw_dotted_hline(fb, y_px, plot_height)
+
+
+def auto_fit_y_bounds(bounds, eval_fn, sample_count=AUTO_FIT_Y_SAMPLES):
+    if eval_fn is None:
+        return None
+
+    if sample_count < 32:
+        sample_count = 32
+
+    x_min = bounds["x_min"]
+    x_max = bounds["x_max"]
+    if x_max == x_min:
+        return None
+
+    step = (x_max - x_min) / (sample_count - 1)
+    x_value = x_min
+
+    found = False
+    y_min = 0.0
+    y_max = 0.0
+    for _ in range(sample_count):
+        y_value = safe_eval(eval_fn, x_value)
+        if y_value is not None:
+            if not found:
+                y_min = y_max = y_value
+                found = True
+            else:
+                if y_value < y_min:
+                    y_min = y_value
+                elif y_value > y_max:
+                    y_max = y_value
+        x_value += step
+
+    if not found:
+        return None
+
+    span = y_max - y_min
+    if span < MIN_AXIS_SPAN:
+        span = MIN_AXIS_SPAN
+    pad = span * AUTO_FIT_Y_PADDING
+    if pad < (MIN_AXIS_SPAN * 4.0):
+        pad = MIN_AXIS_SPAN * 4.0
+
+    out = _clone_bounds(bounds)
+    out["y_min"] = y_min - pad
+    out["y_max"] = y_max + pad
+    return _normalize_bounds(out)
 
 
 def _draw_axes(fb, x_min, x_max, y_min, y_max, x_scale, y_scale, plot_height):
@@ -532,7 +743,7 @@ def _draw_axes(fb, x_min, x_max, y_min, y_max, x_scale, y_scale, plot_height):
         fb.vline(y_axis_x, 0, plot_height, 1)
 
 
-def plot_function(fb, eval_fn, bounds, plot_height):
+def plot_function(fb, eval_fn, bounds, plot_height, show_grid=False):
     x_min = bounds["x_min"]
     x_max = bounds["x_max"]
     y_min = bounds["y_min"]
@@ -550,6 +761,8 @@ def plot_function(fb, eval_fn, bounds, plot_height):
     y_scale = y_range / (plot_height - 1)
     inv_y_scale = 1.0 / y_scale
 
+    if show_grid:
+        _draw_grid(fb, plot_height)
     _draw_axes(fb, x_min, x_max, y_min, y_max, x_scale, y_scale, plot_height)
 
     spp = _samples_per_px_for_view(x_range)
@@ -1091,7 +1304,7 @@ def draw_cursor_overlay(fb, cursor, bounds, eval_fn, plot_height, tool_state=Non
         draw_medium_text(fb, _fmt_cursor_coord(y_coord, "y"), DISPLAY_WIDTH - 42, plot_height + 1)
 
 
-def replot(fb, fb_buf, expression, bounds, cursor, cache_buf=None, tool_state=None):
+def replot(fb, fb_buf, expression, bounds, cursor, cache_buf=None, tool_state=None, show_grid=False):
     start_ms = time.ticks_ms()
 
     eval_fn = get_eval_fn(expression)
@@ -1105,7 +1318,7 @@ def replot(fb, fb_buf, expression, bounds, cursor, cache_buf=None, tool_state=No
     tool_active = tool_state is not None and tool_state.active
     plot_height = DISPLAY_HEIGHT if not (cursor.active or tool_active) else PLOT_HEIGHT_WITH_CURSOR
 
-    if not plot_function(fb, eval_fn, bounds, plot_height):
+    if not plot_function(fb, eval_fn, bounds, plot_height, show_grid=show_grid):
         draw_medium_text(fb, "range err", 2, 57)
 
     if tool_active:
@@ -1126,12 +1339,21 @@ def replot(fb, fb_buf, expression, bounds, cursor, cache_buf=None, tool_state=No
     return True
 
 
-def update_cursor_only(fb, fb_buf, cache_buf, cursor, bounds, expression, tool_state=None):
+def update_cursor_only(fb, fb_buf, cache_buf, cursor, bounds, expression, tool_state=None, show_grid=False):
     start_ms = time.ticks_ms()
     eval_fn = get_eval_fn(expression)
 
     if tool_state is not None and tool_state.active:
-        replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+        replot(
+            fb,
+            fb_buf,
+            expression,
+            bounds,
+            cursor,
+            cache_buf,
+            tool_state,
+            show_grid=show_grid,
+        )
         return
 
     fb_buf[:] = cache_buf
@@ -1149,12 +1371,13 @@ def update_cursor_only(fb, fb_buf, cache_buf, cursor, bounds, expression, tool_s
 
 
 def _set_initial_form():
+    default_bounds = _default_bounds()
     form.input_list = {
-        "inp_0": "x*sin(x) ",
-        "inp_1": "-20 ",
-        "inp_2": "20 ",
-        "inp_3": "-10 ",
-        "inp_4": "10 ",
+        "inp_0": DEFAULT_EXPRESSION + " ",
+        "inp_1": format_number(default_bounds["x_min"]),
+        "inp_2": format_number(default_bounds["x_max"]),
+        "inp_3": format_number(default_bounds["y_min"]),
+        "inp_4": format_number(default_bounds["y_max"]),
     }
     form.form_list = [
         "enter function:f(x)",
@@ -1171,7 +1394,7 @@ def _set_initial_form():
     form.update()
 
 
-def graph(db={}):
+def graph(db=None):
     _dprint("Graph start, mem:", gc.mem_free())
     keypad_state_manager_reset()
 
@@ -1179,7 +1402,15 @@ def graph(db={}):
 
     def _set_fast_poll():
         if prev_debounce is not None:
-            typer.debounce_delay_time = INPUT_POLL_SEC
+            fast_poll_sec = INPUT_POLL_SEC
+            try:
+                raw = data_bucket.get("hyb_graph_fast_debounce_sec", INPUT_POLL_SEC)
+                fast_poll_sec = float(raw)
+            except Exception:
+                fast_poll_sec = INPUT_POLL_SEC
+            if fast_poll_sec < 0.001:
+                fast_poll_sec = 0.001
+            typer.debounce_delay_time = fast_poll_sec
 
     def _restore_default_poll():
         if prev_debounce is not None:
@@ -1194,6 +1425,8 @@ def graph(db={}):
         cache_buf = bytearray(len(fb_buf))
         cursor = CursorState()
         tool_state = ToolState()
+        show_grid = _coerce_bool(data_bucket.get("graph_show_grid", True), default=True)
+        saved_view_bounds = None
 
         while True:
             _restore_default_poll()
@@ -1218,7 +1451,16 @@ def graph(db={}):
 
                 gc.collect()
                 expression = form.inp_list()["inp_0"]
-                replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                replot(
+                    fb,
+                    fb_buf,
+                    expression,
+                    bounds,
+                    cursor,
+                    cache_buf,
+                    tool_state,
+                    show_grid=show_grid,
+                )
                 fast_poll_block_until_ms = None
 
                 try:
@@ -1237,7 +1479,7 @@ def graph(db={}):
 
                         key = typer.start_typing()
 
-                        if key in ("a", "A", "module", "copy"):
+                        if key in ("a", "A", "module"):
                             cursor.toggle()
                             if cursor.active and tool_state.active:
                                 tool_state.sync_cursor(cursor, bounds)
@@ -1251,7 +1493,16 @@ def graph(db={}):
                                     time.ticks_ms(), FAST_POLL_RESUME_DELAY_MS
                                 )
                             expression = form.inp_list()["inp_0"]
-                            replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                            replot(
+                                fb,
+                                fb_buf,
+                                expression,
+                                bounds,
+                                cursor,
+                                cache_buf,
+                                tool_state,
+                                show_grid=show_grid,
+                            )
 
                         elif key == "+":
                             bounds = apply_zoom(bounds, ZOOM_IN_FACTOR)
@@ -1259,7 +1510,16 @@ def graph(db={}):
                             if cursor.active and tool_state.active:
                                 tool_state.sync_cursor(cursor, bounds)
                             expression = form.inp_list()["inp_0"]
-                            replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                            replot(
+                                fb,
+                                fb_buf,
+                                expression,
+                                bounds,
+                                cursor,
+                                cache_buf,
+                                tool_state,
+                                show_grid=show_grid,
+                            )
 
                         elif key == "-":
                             bounds = apply_zoom(bounds, ZOOM_OUT_FACTOR)
@@ -1267,7 +1527,16 @@ def graph(db={}):
                             if cursor.active and tool_state.active:
                                 tool_state.sync_cursor(cursor, bounds)
                             expression = form.inp_list()["inp_0"]
-                            replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                            replot(
+                                fb,
+                                fb_buf,
+                                expression,
+                                bounds,
+                                cursor,
+                                cache_buf,
+                                tool_state,
+                                show_grid=show_grid,
+                            )
 
                         elif key == "nav_u":
                             handled = False
@@ -1275,14 +1544,32 @@ def graph(db={}):
                                 handled = tool_state.focus_left(cursor, bounds)
                             if handled:
                                 expression = form.inp_list()["inp_0"]
-                                replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                                replot(
+                                    fb,
+                                    fb_buf,
+                                    expression,
+                                    bounds,
+                                    cursor,
+                                    cache_buf,
+                                    tool_state,
+                                    show_grid=show_grid,
+                                )
                             else:
                                 bounds = apply_pan(bounds, "up")
                                 update_bounds(bounds)
                                 if tool_state.active:
                                     tool_state.sync_cursor(cursor, bounds)
                                 expression = form.inp_list()["inp_0"]
-                                replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                                replot(
+                                    fb,
+                                    fb_buf,
+                                    expression,
+                                    bounds,
+                                    cursor,
+                                    cache_buf,
+                                    tool_state,
+                                    show_grid=show_grid,
+                                )
 
                         elif key == "nav_d":
                             handled = False
@@ -1290,14 +1577,32 @@ def graph(db={}):
                                 handled = tool_state.focus_right(cursor, bounds)
                             if handled:
                                 expression = form.inp_list()["inp_0"]
-                                replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                                replot(
+                                    fb,
+                                    fb_buf,
+                                    expression,
+                                    bounds,
+                                    cursor,
+                                    cache_buf,
+                                    tool_state,
+                                    show_grid=show_grid,
+                                )
                             else:
                                 bounds = apply_pan(bounds, "down")
                                 update_bounds(bounds)
                                 if tool_state.active:
                                     tool_state.sync_cursor(cursor, bounds)
                                 expression = form.inp_list()["inp_0"]
-                                replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                                replot(
+                                    fb,
+                                    fb_buf,
+                                    expression,
+                                    bounds,
+                                    cursor,
+                                    cache_buf,
+                                    tool_state,
+                                    show_grid=show_grid,
+                                )
 
                         elif key == "nav_l":
                             if cursor.active:
@@ -1307,14 +1612,32 @@ def graph(db={}):
                                     moved = cursor.move("left")
                                 if moved:
                                     expression = form.inp_list()["inp_0"]
-                                    update_cursor_only(fb, fb_buf, cache_buf, cursor, bounds, expression, tool_state)
+                                    update_cursor_only(
+                                        fb,
+                                        fb_buf,
+                                        cache_buf,
+                                        cursor,
+                                        bounds,
+                                        expression,
+                                        tool_state,
+                                        show_grid=show_grid,
+                                    )
                             else:
                                 bounds = apply_pan(bounds, "left")
                                 update_bounds(bounds)
                                 if tool_state.active:
                                     tool_state.sync_cursor(cursor, bounds)
                                 expression = form.inp_list()["inp_0"]
-                                replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                                replot(
+                                    fb,
+                                    fb_buf,
+                                    expression,
+                                    bounds,
+                                    cursor,
+                                    cache_buf,
+                                    tool_state,
+                                    show_grid=show_grid,
+                                )
 
                         elif key == "nav_r":
                             if cursor.active:
@@ -1324,14 +1647,105 @@ def graph(db={}):
                                     moved = cursor.move("right")
                                 if moved:
                                     expression = form.inp_list()["inp_0"]
-                                    update_cursor_only(fb, fb_buf, cache_buf, cursor, bounds, expression, tool_state)
+                                    update_cursor_only(
+                                        fb,
+                                        fb_buf,
+                                        cache_buf,
+                                        cursor,
+                                        bounds,
+                                        expression,
+                                        tool_state,
+                                        show_grid=show_grid,
+                                    )
                             else:
                                 bounds = apply_pan(bounds, "right")
                                 update_bounds(bounds)
                                 if tool_state.active:
                                     tool_state.sync_cursor(cursor, bounds)
                                 expression = form.inp_list()["inp_0"]
-                                replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                                replot(
+                                    fb,
+                                    fb_buf,
+                                    expression,
+                                    bounds,
+                                    cursor,
+                                    cache_buf,
+                                    tool_state,
+                                    show_grid=show_grid,
+                                )
+
+                        elif key == "S_D":
+                            show_grid = not show_grid
+                            data_bucket["graph_show_grid"] = show_grid
+                            expression = form.inp_list()["inp_0"]
+                            replot(
+                                fb,
+                                fb_buf,
+                                expression,
+                                bounds,
+                                cursor,
+                                cache_buf,
+                                tool_state,
+                                show_grid=show_grid,
+                            )
+
+                        elif key == "ans":
+                            expression = form.inp_list()["inp_0"]
+                            eval_fn = get_eval_fn(expression)
+                            fitted = auto_fit_y_bounds(bounds, eval_fn)
+                            if fitted is not None:
+                                bounds = fitted
+                                update_bounds(bounds)
+                                if tool_state.active:
+                                    tool_state.sync_cursor(cursor, bounds)
+                            replot(
+                                fb,
+                                fb_buf,
+                                expression,
+                                bounds,
+                                cursor,
+                                cache_buf,
+                                tool_state,
+                                show_grid=show_grid,
+                            )
+
+                        elif key == "AC":
+                            bounds = _default_bounds()
+                            update_bounds(bounds)
+                            if tool_state.active:
+                                tool_state.sync_cursor(cursor, bounds)
+                            expression = form.inp_list()["inp_0"]
+                            replot(
+                                fb,
+                                fb_buf,
+                                expression,
+                                bounds,
+                                cursor,
+                                cache_buf,
+                                tool_state,
+                                show_grid=show_grid,
+                            )
+
+                        elif key == "copy":
+                            saved_view_bounds = _clone_bounds(bounds)
+
+                        elif key == "paste":
+                            if saved_view_bounds is not None:
+                                bounds = _normalize_bounds(_clone_bounds(saved_view_bounds))
+                                update_bounds(bounds)
+                                if tool_state.active:
+                                    tool_state.sync_cursor(cursor, bounds)
+                                expression = form.inp_list()["inp_0"]
+                                replot(
+                                    fb,
+                                    fb_buf,
+                                    expression,
+                                    bounds,
+                                    cursor,
+                                    cache_buf,
+                                    tool_state,
+                                    show_grid=show_grid,
+                                )
 
                         elif key == "toolbox":
                             _restore_default_poll()
@@ -1354,7 +1768,16 @@ def graph(db={}):
                                     time.ticks_ms(), FAST_POLL_RESUME_DELAY_MS
                                 )
                             expression = form.inp_list()["inp_0"]
-                            replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                            replot(
+                                fb,
+                                fb_buf,
+                                expression,
+                                bounds,
+                                cursor,
+                                cache_buf,
+                                tool_state,
+                                show_grid=show_grid,
+                            )
 
                         elif key == ",":
                             _restore_default_poll()
@@ -1375,7 +1798,16 @@ def graph(db={}):
                                     time.ticks_ms(), FAST_POLL_RESUME_DELAY_MS
                                 )
                             expression = form.inp_list()["inp_0"]
-                            replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
+                            replot(
+                                fb,
+                                fb_buf,
+                                expression,
+                                bounds,
+                                cursor,
+                                cache_buf,
+                                tool_state,
+                                show_grid=show_grid,
+                            )
 
                         elif key in ("alpha", "beta"):
                             keypad_state_manager(x=key)

@@ -16,6 +16,10 @@ except Exception:
 # # display.clear_display()
 # form_refresh.refresh()
 
+import _thread
+import builtins
+import sys
+
 from process_modules.app_handler import app_handler
 # from process_modules.auto_wifi_connector import auto_wifi_connector
 # import json
@@ -27,4 +31,16 @@ from process_modules.app_handler import app_handler
 # if boot_up_data["states"]["wifi_connected"]:
 #     auto_wifi_connector()
 # app_handler(last_used_app=boot_up_data["data_points"]["last_used_app"], last_used_app_folder=boot_up_data["data_points"]["last_used_app_folder"])
-app_handler()
+
+
+def _run_app_handler():
+    try:
+        app_handler()
+    except Exception as exc:
+        sys.print_exception(exc)
+
+
+if not getattr(builtins, "_calsci_app_thread_started", False):
+    builtins._calsci_app_thread_started = True
+    _thread.stack_size(32 * 1024)
+    _thread.start_new_thread(_run_app_handler, ())
