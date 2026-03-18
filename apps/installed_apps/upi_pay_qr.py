@@ -15,6 +15,12 @@ try:
 except ImportError:
     from mocking import framebuf  # type: ignore
 
+import _thread
+try:
+    import utime as time  # type: ignore
+except ImportError:
+    import time  # type: ignore
+
 from data_modules.object_handler import (
     app,
     display,
@@ -39,10 +45,15 @@ QR_SIZE = 17 + (QR_VERSION * 4)
 QR_DATA_CODEWORDS = 55
 QR_ECC_CODEWORDS = 15
 QR_MAX_PAYLOAD_LEN = 53
+QR_FIXED_MASK = 0
 QR_SCALE = 2
-QR_X = 4
-QR_Y = 3
-QR_TEXT_X = 70
+QR_RENDER_SIZE = QR_SIZE * QR_SCALE
+QR_X = (DISPLAY_WIDTH - QR_RENDER_SIZE) // 2
+QR_Y = (DISPLAY_HEIGHT - QR_RENDER_SIZE) // 2
+
+_QR_RS_DIVISOR = None
+_QR_FUNCTION_TEMPLATE = None
+_QR_FUNCTION_MAP = None
 
 
 def _go_back_to_installed_apps():
@@ -178,6 +189,20 @@ def _reed_solomon_remainder(data, divisor):
     return result
 
 
+def _get_rs_divisor():
+    global _QR_RS_DIVISOR
+    if _QR_RS_DIVISOR is None:
+        _QR_RS_DIVISOR = _reed_solomon_divisor(QR_ECC_CODEWORDS)
+    return _QR_RS_DIVISOR
+
+
+def _sleep_ms(duration_ms):
+    if hasattr(time, "sleep_ms"):
+        time.sleep_ms(duration_ms)
+    else:
+        time.sleep(duration_ms / 1000)
+
+
 def _append_bits(bits, value, bit_count):
     for shift in range(bit_count - 1, -1, -1):
         bits.append((value >> shift) & 1)
@@ -281,6 +306,17 @@ def _draw_function_patterns(modules, function_map):
         _set_function_module(modules, function_map, 8, QR_SIZE - 1 - i, False)
 
     _set_function_module(modules, function_map, 8, QR_SIZE - 8, True)
+
+
+def _get_function_templates():
+    global _QR_FUNCTION_TEMPLATE, _QR_FUNCTION_MAP
+    if _QR_FUNCTION_TEMPLATE is None or _QR_FUNCTION_MAP is None:
+        modules = _blank_matrix(QR_SIZE)
+        function_map = _blank_function_map(QR_SIZE)
+        _draw_function_patterns(modules, function_map)
+        _QR_FUNCTION_TEMPLATE = modules
+        _QR_FUNCTION_MAP = function_map
+    return _copy_matrix(_QR_FUNCTION_TEMPLATE), _QR_FUNCTION_MAP
 
 
 def _draw_codewords(modules, function_map, all_codewords):
@@ -441,25 +477,17 @@ def _penalty_score(modules):
 
 def _make_qr_matrix(payload_text):
     data_codewords = _make_data_codewords(payload_text)
-    divisor = _reed_solomon_divisor(QR_ECC_CODEWORDS)
+    divisor = _get_rs_divisor()
     ecc_codewords = _reed_solomon_remainder(data_codewords, divisor)
 
-    base_modules = _blank_matrix(QR_SIZE)
-    function_map = _blank_function_map(QR_SIZE)
-    _draw_function_patterns(base_modules, function_map)
-    _draw_codewords(base_modules, function_map, data_codewords + ecc_codewords)
+    modules, function_map = _get_function_templates()
+    _draw_codewords(modules, function_map, data_codewords + ecc_codewords)
 
-    best_modules = None
-    best_penalty = None
-    for mask in range(8):
-        trial = _copy_matrix(base_modules)
-        _apply_mask(trial, function_map, mask)
-        _draw_format_bits(trial, function_map, mask)
-        penalty = _penalty_score(trial)
-        if best_penalty is None or penalty < best_penalty:
-            best_penalty = penalty
-            best_modules = trial
-    return best_modules
+    # A fixed mask is much faster on MicroPython than evaluating all 8 masks.
+    # It does not change correctness; it only skips the quality search step.
+    _apply_mask(modules, function_map, QR_FIXED_MASK)
+    _draw_format_bits(modules, function_map, QR_FIXED_MASK)
+    return modules
 
 
 def _draw_qr(fb, matrix, x0, y0, scale):
@@ -469,33 +497,81 @@ def _draw_qr(fb, matrix, x0, y0, scale):
                 fb.fill_rect(x0 + (x * scale), y0 + (y * scale), scale, scale, 1)
 
 
-def _qr_text_lines(amount_text):
-    return (
-        "PAY QR",
-        "Rupesh",
-        "Verma",
-        "Amt Rs",
-        amount_text[:7],
-        "YBL",
-        "OK edit",
-        "Back",
-    )
+def _draw_centered_text(fb, text_value, y):
+    x = (DISPLAY_WIDTH - (len(text_value) * 8)) // 2
+    if x < 0:
+        x = 0
+    fb.text(text_value, x, y, 1)
 
 
-def _show_qr_screen(amount_text):
-    payload = _build_upi_uri(amount_text)
-    matrix = _make_qr_matrix(payload)
+def _show_loading_screen(frame_no=0):
+    buffer = bytearray(FB_SIZE)
+    fb = framebuf.FrameBuffer(buffer, DISPLAY_WIDTH, DISPLAY_HEIGHT, framebuf.MONO_VLSB)
+    fb.fill(0)
+    dots = "." * (frame_no % 4)
+    _draw_centered_text(fb, "Generating", 20)
+    _draw_centered_text(fb, "QR" + dots, 32)
+    display.clear_display()
+    display.graphics(buffer, page=0, column=0, width=DISPLAY_WIDTH, pages=DISPLAY_PAGES)
 
+
+def _set_qr_job_value(job, key, value):
+    lock = job["lock"]
+    lock.acquire()
+    try:
+        job[key] = value
+    finally:
+        lock.release()
+
+
+def _get_qr_job_snapshot(job):
+    lock = job["lock"]
+    lock.acquire()
+    try:
+        return job["done"], job["matrix"], job["error"]
+    finally:
+        lock.release()
+
+
+def _qr_worker(amount_text, job):
+    try:
+        payload = _build_upi_uri(amount_text)
+        matrix = _make_qr_matrix(payload)
+        _set_qr_job_value(job, "matrix", matrix)
+    except Exception as exc:
+        _set_qr_job_value(job, "error", str(exc))
+    _set_qr_job_value(job, "done", True)
+
+
+def _build_qr_matrix_with_loading(amount_text):
+    job = {
+        "lock": _thread.allocate_lock(),
+        "done": False,
+        "matrix": None,
+        "error": None,
+    }
+
+    try:
+        _thread.start_new_thread(_qr_worker, (amount_text, job))
+    except Exception:
+        payload = _build_upi_uri(amount_text)
+        return _make_qr_matrix(payload), None
+
+    frame_no = 0
+    while True:
+        done, matrix, error = _get_qr_job_snapshot(job)
+        if done:
+            return matrix, error
+        _show_loading_screen(frame_no)
+        frame_no += 1
+        _sleep_ms(120)
+
+
+def _show_qr_screen(matrix):
     buffer = bytearray(FB_SIZE)
     fb = framebuf.FrameBuffer(buffer, DISPLAY_WIDTH, DISPLAY_HEIGHT, framebuf.MONO_VLSB)
     fb.fill(0)
     _draw_qr(fb, matrix, QR_X, QR_Y, QR_SCALE)
-
-    y = 0
-    for line in _qr_text_lines(amount_text):
-        fb.text(line, QR_TEXT_X, y, 1)
-        y += 8
-
     display.clear_display()
     display.graphics(buffer, page=0, column=0, width=DISPLAY_WIDTH, pages=DISPLAY_PAGES)
 
@@ -535,7 +611,10 @@ def upi_pay_qr(db={}):
                 try:
                     paise = _amount_to_paise(raw_amount)
                     current_amount = _paise_to_amount_string(paise)
-                    _show_qr_screen(current_amount)
+                    matrix, error = _build_qr_matrix_with_loading(current_amount)
+                    if error:
+                        raise ValueError(error)
+                    _show_qr_screen(matrix)
                     mode = "qr"
                     continue
                 except Exception as exc:
@@ -561,4 +640,3 @@ def upi_pay_qr(db={}):
                 display.clear_display()
                 form_refresh.refresh(state=nav.current_state())
                 mode = "form"
-

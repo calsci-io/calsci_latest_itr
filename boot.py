@@ -116,12 +116,12 @@ def _switch_to(label, name):
 # ----------------------------
 # Runtime globals
 # ----------------------------
-from apps.settings.backlight import backlight_pin
+from apps.settings.backlight import apply_saved_backlight
 import builtins
 import calsci_runtime
 from data_modules.object_handler import data_bucket, menu, menu_refresh, typer
 
-backlight_pin.on()
+apply_saved_backlight()
 builtins.display = display
 builtins.typer = typer
 builtins.set_calsci_keypad_blocked = calsci_runtime.set_calsci_keypad_blocked
