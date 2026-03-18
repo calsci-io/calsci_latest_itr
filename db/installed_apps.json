@@ -51,6 +51,10 @@
         "13": {
             "app_name": "lvgl_icon_demo",
             "group_name": "installed_apps"
+        },
+        "14": {
+            "app_name": "upi_pay_qr",
+            "group_name": "installed_apps"
         }
     }
 }
