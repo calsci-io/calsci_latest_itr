@@ -1,26 +1,31 @@
 import gc
-import esp32
-from sleeping_features import keypad_normal
-keypad_normal()
 import machine
-opin = machine.Pin(14, machine.Pin.OUT, value=1, hold=False)  # Reinitialize the pin for deepsleep keypad
-# from test_thread import run_thread
-# opin.hold(False)
-# from data_modules.object_handler import display
+import esp32
 import st7565 as display
-st7565_display_pins={"cs1":9, "rs":11, "rst":10, "sda":13, "sck":12} #2.9
-# display.init(st7565_display_pins["cs1"], st7565_display_pins["rs"], st7565_display_pins["rst"], st7565_display_pins["sda"], st7565_display_pins["sck"])
-# display.init(st7565_display_pins["cs1"], st7565_display_pins["rs"], st7565_display_pins["rst"], st7565_display_pins["sda"], st7565_display_pins["sck"]) #2.9
-display.init(9, 11, 10, 13, 12)
-cal_sci_buffer=bytearray(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe0   \xa0\xa0\xa0\xa0            \xa0\xa0\xa0     \xa0\xa0\xa0\xa0             \xa0\xa0    \xe0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\x00\x00\x1f?  1\x11\x00\x00\x10:**><\x00\x00\x00 ?? \x00\x00\x00\x137$$=\x19\x00\x00\x1c>""6\x14\x00\x00\x00\x00>>\x00\x00\x00\x00\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xc0\xc1\x01\x01\xc1\xc1\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01A\xc1\xc1\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\xc1\xc1\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0f\x1f\x10\x10\x1f\x0f\x00\x00\x1f\x1f\x01\x01\x1f\x1e\x00\x00\x00\x10\x1f\x1f\x10\x00\x00\x00\x0e\x1f\x15\x15\x17\x16\x00\x00\x08\x1d\x15\x15\x1f\x1e\x00\x00\x12\x17\x15\x15\x1d\x08\x00\x00\x1f\x1f\x01\x01\x1f\x1e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07\x0fxx\x0f\x07\x00\x008|DD|8\x00\x00<|@@|<\x00\x00||\x04\x04\x0c\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00A\x7f\x7fA\x00\x00\x00||\x180\x18||\x00 tTT|x\x00\x00\x98\xbc\xa4\xa4\xfc|\x00\x00\x00\x00}}\x00\x00\x00\x00||\x04\x04|x\x00\x00 tTT|x\x00\x04\x04?\x7fDd \x00\x00\x00\x00}}\x00\x00\x00\x008|DD|8\x00\x00||\x04\x04|x\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
-display.graphics(cal_sci_buffer)
-# display.write_instruction(0x81) #for only 3.0
-# display.write_instruction(0x06)
+from sleeping_features import keypad_normal
+
+# ----------------------------
+# Hardware bootstrap
+# ----------------------------
+DISPLAY_PINS = (9, 11, 10, 13, 12)
+DEEPSLEEP_KEY_PIN = 14
+
+keypad_normal()
+machine.Pin(DEEPSLEEP_KEY_PIN, machine.Pin.OUT, value=1, hold=False)
+display.init(*DISPLAY_PINS)
+
+try:
+    display.clear_display()
+except Exception:
+    pass
+
 gc.enable()
 print("free ram initially=", gc.mem_free())
 print("ram allocated initially=", gc.mem_alloc())
 
-# --- Triple Boot System ---
+# ----------------------------
+# Triple boot helpers
+# ----------------------------
 print("=================================")
 print("  CalSci - Triple Boot System")
 print("=================================")
@@ -31,27 +36,23 @@ print("=================================")
 
 
 def boot_info():
-    """Show current running partition info."""
     cur = esp32.Partition(esp32.Partition.RUNNING)
     print("Running from:", cur.info())
     print()
     print("All app partitions:")
-    for p in esp32.Partition.find(esp32.Partition.TYPE_APP):
-        print(" ", p.info())
+    for part in esp32.Partition.find(esp32.Partition.TYPE_APP):
+        print(" ", part.info())
 
 
 def switch_to_cpp():
-    """Switch to C++ (ota_1) and reboot."""
     _switch_to("ota_1", "C++")
 
 
 def switch_to_rust():
-    """Switch to Rust (ota_2) and reboot."""
     _switch_to("ota_2", "Rust")
 
 
 def switch_to_micropython():
-    """Switch back to MicroPython (ota_0) and reboot."""
     _switch_to("ota_0", "MicroPython")
 
 
@@ -67,13 +68,11 @@ def _decode_partition_field(value):
 
 
 def _partition_by_label(label):
-    # Fast path for firmwares where Partition(label) is supported.
     try:
         return esp32.Partition(label)
     except Exception:
         pass
 
-    # Fallback: scan app partitions and match label from info().
     try:
         parts = esp32.Partition.find(esp32.Partition.TYPE_APP)
     except Exception:
@@ -93,13 +92,14 @@ def _partition_by_label(label):
 
 
 def _switch_to(label, name):
-    """Set boot partition and restart."""
     import time as _time
+
     try:
         part = _partition_by_label(label)
         if part is None:
             print("Error switching to", label, ": partition not found")
             return
+
         part.set_boot()
         print("Next boot:", name, "(" + label + ")")
         display.clear_display()
@@ -109,155 +109,39 @@ def _switch_to(label, name):
         print("Restarting in 1 second...")
         _time.sleep(1)
         machine.reset()
-    except Exception as e:
-        print("Error switching to", label, ":", e)
-# --- End Triple Boot System ---
-try:
-    from apps.settings.backlight import apply_saved_backlight
-except ImportError:
-    from apps.settings.backlight import backlight_pin
-    backlight_pin.on()
-else:
-    apply_saved_backlight()
-# from test_thread import run_thread
-# run_thread()
-# import uasyncio as asyncio
-# from test_async import main
-# asyncio.run(main())
+    except Exception as exc:
+        print("Error switching to", label, ":", exc)
+
+
+# ----------------------------
+# Runtime globals
+# ----------------------------
+from apps.settings.backlight import backlight_pin
 import builtins
-import sys as _boot_sys
+import calsci_runtime
+from data_modules.object_handler import data_bucket, menu, menu_refresh, typer
 
-_hyb_graphics_hook = None
-_hyb_set_page_hook = None
-_hyb_set_col_hook = None
-_hyb_write_data_hook = None
-_hyb_clear_hook = None
+backlight_pin.on()
+builtins.display = display
+builtins.typer = typer
+builtins.set_calsci_keypad_blocked = calsci_runtime.set_calsci_keypad_blocked
+builtins.block_calsci_keypad = calsci_runtime.block_calsci_keypad
+builtins.unblock_calsci_keypad = calsci_runtime.unblock_calsci_keypad
+builtins.calsci_keypad_blocked = calsci_runtime.calsci_keypad_blocked
 
-
-class _HybridDisplayProxy:
-    def __init__(self, real_mod):
-        self._real_mod = real_mod
-        self.__name__ = "st7565"
-
-    def __setattr__(self, name, value):
-        if name in ("_real_mod", "__name__"):
-            object.__setattr__(self, name, value)
-            return
-
-        # Keep bridge interception active even if app code tries to monkey-patch.
-        if name in (
-            "graphics",
-            "set_page_address",
-            "set_column_address",
-            "write_data",
-            "clear_display",
-        ):
-            return
-
-        try:
-            setattr(self._real_mod, name, value)
-        except Exception:
-            object.__setattr__(self, name, value)
-
-    def __getattr__(self, name):
-        return getattr(self._real_mod, name)
-
-    def init(self, *args, **kwargs):
-        return self._real_mod.init(*args, **kwargs)
-
-    def set_page_address(self, page):
-        hook = _hyb_set_page_hook
-        if hook is not None:
-            try:
-                hook(page)
-            except Exception:
-                pass
-        return self._real_mod.set_page_address(page)
-
-    def set_column_address(self, col):
-        hook = _hyb_set_col_hook
-        if hook is not None:
-            try:
-                hook(col)
-            except Exception:
-                pass
-        return self._real_mod.set_column_address(col)
-
-    def write_data(self, value):
-        hook = _hyb_write_data_hook
-        if hook is not None:
-            try:
-                hook(value)
-            except Exception:
-                pass
-        return self._real_mod.write_data(value)
-
-    def graphics(self, buf, *args, **kwargs):
-        hook = _hyb_graphics_hook
-        if hook is not None:
-            try:
-                hook(buf, args, kwargs)
-            except Exception:
-                pass
-        return self._real_mod.graphics(buf, *args, **kwargs)
-
-    def clear_display(self):
-        hook = _hyb_clear_hook
-        if hook is not None:
-            try:
-                hook()
-            except Exception:
-                pass
-        return self._real_mod.clear_display()
-
-try:
-    _hyb_display_proxy = _HybridDisplayProxy(display)
-    _boot_sys.modules["st7565"] = _hyb_display_proxy
-    display = _hyb_display_proxy
-except Exception:
-    pass
-
-from data_modules.object_handler import text, menu, form, nav, text_refresh, menu_refresh, form_refresh, typer, data_bucket
-builtins.display=display
-builtins.text=text
-builtins.menu=menu
-builtins.form=form
-builtins.text_refresh=text_refresh
-builtins.text_refresh=menu_refresh
-builtins.text_refresh=form_refresh
-builtins.typer=typer
-
-
-
-# WiFi startup disabled for fast boot.
+# WiFi startup stays disabled for fast boot.
 builtins.sta_if = None
 data_bucket["connection_status_g"] = False
 data_bucket["ssid_g"] = ""
 
-# Hybrid keypad debounce profile:
-# - global stable delay for menus/general typing
-# - graph app can temporarily switch to fast poll while cursor/tools are inactive
-try:
-    _HYB_GLOBAL_DEBOUNCE_SEC = 0.200
-    typer.debounce_delay_time = _HYB_GLOBAL_DEBOUNCE_SEC
-    data_bucket["hyb_global_debounce_sec"] = _HYB_GLOBAL_DEBOUNCE_SEC
-except Exception:
-    data_bucket["hyb_global_debounce_sec"] = None
-data_bucket["hyb_graph_fast_debounce_sec"] = 0.001
 
-# ------------------------------------------------------------
-# Hybrid REPL helpers
-# Single CDC rule: no unsolicited bridge traffic while the REPL helpers are
-# active. The host/extension must explicitly request state with helper calls.
-# ------------------------------------------------------------
+# ----------------------------
+# Hybrid bridge (controller-facing)
+# ----------------------------
 try:
     import sys
+    import _thread
     import time as _pytime
-
-    try:
-        import ubinascii as _binascii
-    except Exception:
-        import binascii as _binascii
 
     try:
         import ujson as _json
@@ -265,20 +149,144 @@ try:
         import json as _json
 
     try:
+        import ubinascii as _binascii
+    except Exception:
+        import binascii as _binascii
+
+    try:
         import utime as _utime
     except Exception:
         _utime = None
 
-    import hybrid_sim
+    try:
+        import uselect as _uselect
+    except Exception:
+        _uselect = None
 
+    try:
+        import hybrid_sim as _hyb_mod
+    except Exception:
+        _hyb_mod = None
+
+    HYBRID_BAUDRATE = 115200
+    _HYB_GLOBAL_DEBOUNCE_SEC = 0.150
+    _HYB_GRAPH_DEBOUNCE_SEC = 0.001
+    _HYB_EMIT_DIRTY_MS = 1
+    _HYB_EMIT_PERIODIC_MS = 1000
+    _HYB_FRAME_PREFIX = "{{CALSCI_HYB:"
+    _HYB_FRAME_SUFFIX = "}}"
+
+    _hyb_tx_lock = _thread.allocate_lock()
     _hyb_key_queue = []
-    _HYB_WRITE_CHUNK = 192
+    _hyb_local_keypad_loop = getattr(typer.keypad, "keypad_loop", None)
 
-    def _hyb_global(name):
+    _hyb_state = {
+        "mode": "local",
+        "hybrid_requested": False,
+        "stream_enabled": False,
+        "force_emit": False,
+        "last_emit_ms": 0,
+        "last_probe_ms": 0,
+        "last_frame_id": -1,
+        "protocol_enabled": True,
+        "accept_protocol_stdin": False,
+    }
+    data_bucket["hyb_stream_enabled"] = False
+    data_bucket["hyb_protocol_enabled"] = True
+    data_bucket["hyb_accept_protocol_stdin"] = False
+    data_bucket["hyb_mode"] = "local"
+    data_bucket["hyb_requested"] = False
+
+    def _hyb_norm_delay(value, fallback):
         try:
-            return globals().get(name, None)
+            parsed = float(value)
+            if parsed > 0:
+                return parsed
         except Exception:
+            pass
+        return float(fallback)
+
+    if not isinstance(data_bucket.get("hyb_delay_local_map"), dict):
+        data_bucket["hyb_delay_local_map"] = {}
+
+    data_bucket["hyb_delay_global_sec"] = _hyb_norm_delay(
+        data_bucket.get("hyb_delay_global_sec", _HYB_GLOBAL_DEBOUNCE_SEC),
+        _HYB_GLOBAL_DEBOUNCE_SEC,
+    )
+    data_bucket["hyb_delay_local_map"]["graph"] = _hyb_norm_delay(
+        data_bucket["hyb_delay_local_map"].get("graph", _HYB_GRAPH_DEBOUNCE_SEC),
+        _HYB_GRAPH_DEBOUNCE_SEC,
+    )
+
+    # Backward-compatible names used by host apps.
+    data_bucket["hyb_global_debounce_sec"] = data_bucket["hyb_delay_global_sec"]
+    data_bucket["hyb_graph_fast_debounce_sec"] = data_bucket["hyb_delay_local_map"]["graph"]
+
+    def hyb_delay_set_global(sec):
+        sec = _hyb_norm_delay(sec, data_bucket.get("hyb_delay_global_sec", _HYB_GLOBAL_DEBOUNCE_SEC))
+        data_bucket["hyb_delay_global_sec"] = sec
+        data_bucket["hyb_global_debounce_sec"] = sec
+        return sec
+
+    def hyb_delay_set_local(name, sec):
+        key = str(name).strip().lower()
+        if not key:
             return None
+
+        if not isinstance(data_bucket.get("hyb_delay_local_map"), dict):
+            data_bucket["hyb_delay_local_map"] = {}
+
+        sec = _hyb_norm_delay(sec, data_bucket.get("hyb_delay_global_sec", _HYB_GLOBAL_DEBOUNCE_SEC))
+        data_bucket["hyb_delay_local_map"][key] = sec
+        if key == "graph":
+            data_bucket["hyb_graph_fast_debounce_sec"] = sec
+        return sec
+
+    def hyb_delay_use_global():
+        sec = _hyb_norm_delay(
+            data_bucket.get("hyb_delay_global_sec", _HYB_GLOBAL_DEBOUNCE_SEC),
+            _HYB_GLOBAL_DEBOUNCE_SEC,
+        )
+        typer.debounce_delay_time = sec
+        data_bucket["hyb_delay_active"] = "global"
+        data_bucket["hyb_delay_active_sec"] = sec
+        return sec
+
+    def hyb_delay_use_local(name):
+        key = str(name).strip().lower()
+        if not key:
+            return hyb_delay_use_global()
+
+        local_map = data_bucket.get("hyb_delay_local_map")
+        if not isinstance(local_map, dict):
+            return hyb_delay_use_global()
+
+        sec = _hyb_norm_delay(
+            local_map.get(key, data_bucket.get("hyb_delay_global_sec", _HYB_GLOBAL_DEBOUNCE_SEC)),
+            data_bucket.get("hyb_delay_global_sec", _HYB_GLOBAL_DEBOUNCE_SEC),
+        )
+        typer.debounce_delay_time = sec
+        data_bucket["hyb_delay_active"] = key
+        data_bucket["hyb_delay_active_sec"] = sec
+        return sec
+
+    builtins.hyb_delay_set_global = hyb_delay_set_global
+    builtins.hyb_delay_set_local = hyb_delay_set_local
+    builtins.hyb_delay_use_global = hyb_delay_use_global
+    builtins.hyb_delay_use_local = hyb_delay_use_local
+
+    # Boot default profile.
+    hyb_delay_use_global()
+
+    def _hyb_ticks_ms():
+        if _utime is not None and hasattr(_utime, "ticks_ms"):
+            return _utime.ticks_ms()
+        return int(_pytime.time() * 1000)
+
+    def _hyb_ticks_diff(a, b):
+        if _utime is not None and hasattr(_utime, "ticks_diff"):
+            return _utime.ticks_diff(a, b)
+        return a - b
 
     def _hyb_sleep_ms(ms):
         if _utime is not None and hasattr(_utime, "sleep_ms"):
@@ -286,223 +294,21 @@ try:
         else:
             _pytime.sleep(ms / 1000.0)
 
+    def _hyb_frame_text(text):
+        return _HYB_FRAME_PREFIX + str(text) + _HYB_FRAME_SUFFIX
+
     def _hyb_write_line(text):
-        text = str(text)
-        payload = text + "\n"
-        wrote_any = False
         try:
-            idx = 0
-            total = len(payload)
-            while idx < total:
-                piece = payload[idx : idx + _HYB_WRITE_CHUNK]
-                wrote = sys.stdout.write(piece)
-                wrote_any = True
-                if wrote is None:
-                    wrote = len(piece)
-                try:
-                    wrote = int(wrote)
-                except Exception:
-                    wrote = len(piece)
-                if wrote <= 0:
-                    wrote = len(piece)
-                idx += min(len(piece), wrote)
-                if idx < total:
-                    _hyb_sleep_ms(0)
-        except Exception:
-            if not wrote_any:
-                try:
-                    print(text)
-                except Exception:
-                    pass
-
-    def _hyb_clean_line(text):
-        try:
-            s = str(text)
-            s = s.replace("𖤓", "_")
-            return s
-        except Exception:
-            return ""
-
-    def _hyb_nav_state():
-        try:
-            nav_obj = _hyb_global("nav")
-            if nav_obj is not None and hasattr(nav_obj, "current_state"):
-                return str(nav_obj.current_state())
+            _hyb_tx_lock.acquire()
+            sys.stdout.write(_hyb_frame_text(text) + "\n")
+            sys.stdout.flush()
         except Exception:
             pass
-        return ""
-
-    def _hyb_menu_lines():
-        try:
-            menu_obj = _hyb_global("menu")
-            if menu_obj is None or not hasattr(menu_obj, "buffer"):
-                return []
-            buf = menu_obj.buffer()
-            if not isinstance(buf, (list, tuple)) or not buf:
-                return []
-            if all(_hyb_clean_line(x).startswith("label_") for x in buf):
-                return []
-            cur = -1
-            if hasattr(menu_obj, "cursor"):
-                try:
-                    cur = int(menu_obj.cursor())
-                except Exception:
-                    cur = -1
-            lines = []
-            for i, row in enumerate(buf):
-                prefix = ">" if i == cur else " "
-                lines.append(prefix + _hyb_clean_line(row))
-            return lines[:7]
-        except Exception:
-            return []
-
-    def _hyb_form_lines():
-        try:
-            form_obj = _hyb_global("form")
-            if form_obj is None or not hasattr(form_obj, "buffer"):
-                return []
-            buf = form_obj.buffer()
-            if not isinstance(buf, (list, tuple)) or not buf:
-                return []
-            if all(_hyb_clean_line(x).startswith("label_") for x in buf):
-                return []
-            lines = []
-            cur = -1
-            if hasattr(form_obj, "cursor"):
-                try:
-                    cur = int(form_obj.cursor())
-                except Exception:
-                    cur = -1
-            inp_list = {}
-            if hasattr(form_obj, "inp_list"):
-                try:
-                    inp_list = form_obj.inp_list() or {}
-                except Exception:
-                    inp_list = {}
-            inp_start = 0
-            if hasattr(form_obj, "inp_display_position"):
-                try:
-                    inp_start = int(form_obj.inp_display_position())
-                except Exception:
-                    inp_start = 0
-            inp_cols = 19
-            if hasattr(form_obj, "inp_cols"):
-                try:
-                    inp_cols = int(form_obj.inp_cols())
-                except Exception:
-                    inp_cols = 19
-
-            for i, row in enumerate(buf):
-                name = _hyb_clean_line(row)
-                if name.startswith("inp_"):
-                    value = _hyb_clean_line(inp_list.get(name, ""))
-                    line = "=>" + value[inp_start : inp_start + inp_cols]
-                else:
-                    line = name
-                prefix = ">" if i == cur and not name.startswith("inp_") else " "
-                lines.append(prefix + line)
-            return lines[:7]
-        except Exception:
-            return []
-
-    def _hyb_text_lines():
-        try:
-            text_obj = _hyb_global("text")
-            if text_obj is None or not hasattr(text_obj, "buffer"):
-                return []
-            buf = text_obj.buffer()
-            if not isinstance(buf, (list, tuple)) or not buf:
-                return []
-            lines = []
-            for row in buf:
-                lines.append(_hyb_clean_line(row))
-            return lines[:7]
-        except Exception:
-            return []
-
-    def _hyb_lines_snapshot():
-        for producer in (_hyb_text_lines, _hyb_form_lines, _hyb_menu_lines):
-            lines = producer()
-            if lines:
-                return lines
-        return []
-
-    def _hyb_fb_to_b64(raw_fb):
-        if raw_fb is None:
-            return ""
-        try:
-            if isinstance(raw_fb, memoryview):
-                raw_fb = raw_fb.tobytes()
-            elif not isinstance(raw_fb, (bytes, bytearray)):
-                raw_fb = bytes(raw_fb)
-            return _binascii.b2a_base64(raw_fb).decode().strip()
-        except Exception:
-            return ""
-
-    def _hyb_state_payload(state, include_fb=False):
-        payload = {}
-        if isinstance(state, dict):
+        finally:
             try:
-                payload.update(state)
+                _hyb_tx_lock.release()
             except Exception:
-                payload = {}
-
-        try:
-            payload["frame_id"] = int(payload.get("frame_id", -1))
-        except Exception:
-            payload["frame_id"] = -1
-
-        if payload["frame_id"] >= 0:
-            payload["fb_seq"] = payload["frame_id"] & 0x7F
-        else:
-            payload["fb_seq"] = 0
-        payload["mode"] = bool(payload.get("mode", hybrid_sim.mode()))
-        payload["capture_enabled"] = bool(payload.get("capture_enabled", hybrid_sim.enabled()))
-        payload["fb_seen"] = bool(payload.get("fb_seen", payload["capture_enabled"]))
-        payload["nav"] = _hyb_nav_state()
-        payload["lines"] = _hyb_lines_snapshot()
-
-        raw_fb = payload.pop("fb", None)
-        if include_fb or raw_fb is not None:
-            if raw_fb is None:
-                raw_fb = hybrid_sim.read_fb()
-            fb_b64 = _hyb_fb_to_b64(raw_fb)
-            if fb_b64:
-                payload["fb"] = fb_b64
-                payload["fb_full"] = True
-
-        return payload
-
-    def _hyb_emit_state(last_frame=-1, force_full=False):
-        try:
-            last_frame = int(last_frame)
-        except Exception:
-            last_frame = -1
-
-        try:
-            if force_full:
-                state = hybrid_sim.status()
-            else:
-                state = hybrid_sim.poll_state(last_frame)
-            payload = _hyb_state_payload(state, include_fb=force_full)
-            _hyb_write_line("STATE:" + _json.dumps(payload))
-        except Exception as exc:
-            _hyb_write_line("HYBRID_SYNC_ERR:%s" % exc)
-
-    def _hyb_ping(token=""):
-        _hyb_write_line("ECHO:%s" % str(token).strip())
-
-    def _hyb_mode(enabled=None):
-        if enabled is None:
-            return hybrid_sim.mode()
-        hybrid_sim.mode(bool(enabled))
-
-    def _hyb_status():
-        try:
-            payload = _hyb_state_payload(hybrid_sim.status(), include_fb=False)
-            _hyb_write_line("STATE:" + _json.dumps(payload))
-        except Exception as exc:
-            _hyb_write_line("HYBRID_STATUS_ERR:%s" % exc)
+                pass
 
     def _hyb_queue_key(col, row):
         try:
@@ -510,79 +316,405 @@ try:
             row = int(row)
             if not (0 <= col <= 4 and 0 <= row <= 9):
                 return False
+
             _hyb_key_queue.append((col, row))
             if len(_hyb_key_queue) > 1:
                 del _hyb_key_queue[:-1]
+            _hyb_state["force_emit"] = True
             return True
         except Exception:
             return False
 
-    def _hyb_key(col, row):
-        if _hyb_queue_key(col, row):
-            _hyb_write_line("HYBRID_KEY_OK:%d,%d" % (int(col), int(row)))
-        else:
-            _hyb_write_line("HYBRID_KEY_ERR:RANGE")
+    def hyb_stream_set_enabled(enabled):
+        enabled = bool(enabled)
+        _hyb_state["stream_enabled"] = enabled
+        data_bucket["hyb_stream_enabled"] = enabled
+        if enabled:
+            _hyb_state["force_emit"] = True
+        return enabled
 
-    def _hyb_key_enqueue(col, row):
-        return _hyb_queue_key(col, row)
+    def hyb_stream_is_enabled():
+        return bool(_hyb_state["stream_enabled"])
 
-    def _hyb_poll_state(last_frame=-1):
-        _hyb_emit_state(last_frame, False)
+    def _hyb_use_local_keypad():
+        if _hyb_local_keypad_loop is not None:
+            typer.keypad.keypad_loop = _hyb_local_keypad_loop
+        data_bucket["hyb_keypad_mode"] = "local"
 
-    def _hyb_sync_full():
-        _hyb_emit_state(-1, True)
+    def _hyb_use_hybrid_keypad():
+        typer.keypad.keypad_loop = hyb_keypad_input
+        data_bucket["hyb_keypad_mode"] = "hybrid"
 
-    def _hyb_emit_hybrid_config():
+    def hyb_bridge_status():
+        return {
+            "mode": _hyb_state["mode"],
+            "hybrid_requested": bool(_hyb_state["hybrid_requested"]),
+            "stream_enabled": bool(_hyb_state["stream_enabled"]),
+            "protocol_enabled": bool(_hyb_state["protocol_enabled"]),
+            "accept_protocol_stdin": bool(_hyb_state["accept_protocol_stdin"]),
+            "delay_active": data_bucket.get("hyb_delay_active", "global"),
+            "delay_active_sec": data_bucket.get("hyb_delay_active_sec", data_bucket.get("hyb_delay_global_sec")),
+        }
+
+    def _hyb_apply_local_mode(hybrid_requested):
+        _hyb_state["mode"] = "local"
+        _hyb_state["hybrid_requested"] = bool(hybrid_requested)
+        _hyb_state["stream_enabled"] = False
+        _hyb_state["force_emit"] = False
+        _hyb_state["protocol_enabled"] = True
+        _hyb_state["accept_protocol_stdin"] = False
+        data_bucket["hyb_mode"] = "local"
+        data_bucket["hyb_requested"] = bool(hybrid_requested)
+        data_bucket["hyb_stream_enabled"] = False
+        data_bucket["hyb_protocol_enabled"] = True
+        data_bucket["hyb_accept_protocol_stdin"] = False
+        _hyb_use_local_keypad()
+        return True
+
+    def hyb_enter_local_mode():
+        _hyb_apply_local_mode(False)
+        _hyb_write_line("CTRL:HYBRID_DISABLED:OK")
+        return True
+
+    def _hyb_apply_command_mode():
+        _hyb_apply_local_mode(_hyb_state["hybrid_requested"])
+        _hyb_state["mode"] = "command"
+        _hyb_state["protocol_enabled"] = False
+        data_bucket["hyb_mode"] = "command"
+        data_bucket["hyb_protocol_enabled"] = False
+        return True
+
+    def hyb_enter_command_mode():
+        _hyb_apply_command_mode()
+        _hyb_write_line("CTRL:COMMAND:OK")
+        return True
+
+    def hyb_enter_exec_mode():
+        _hyb_apply_command_mode()
+        _hyb_state["mode"] = "exec"
+        data_bucket["hyb_mode"] = "exec"
+        _hyb_write_line("CTRL:HYBRID_OFF:OK")
+        return True
+
+    def hyb_enter_hybrid_mode(stream_enabled=False):
+        _hyb_state["mode"] = "hybrid"
+        _hyb_state["hybrid_requested"] = True
+        _hyb_state["protocol_enabled"] = True
+        _hyb_state["accept_protocol_stdin"] = True
+        _hyb_state["stream_enabled"] = bool(stream_enabled)
+        _hyb_state["force_emit"] = _hyb_state["stream_enabled"]
+        data_bucket["hyb_mode"] = "hybrid"
+        data_bucket["hyb_requested"] = True
+        data_bucket["hyb_protocol_enabled"] = True
+        data_bucket["hyb_accept_protocol_stdin"] = True
+        data_bucket["hyb_stream_enabled"] = _hyb_state["stream_enabled"]
+        hyb_delay_use_global()
+        _hyb_use_hybrid_keypad()
+        _hyb_write_line("CTRL:HYBRID_ON:OK")
+        if _hyb_state["stream_enabled"]:
+            _hyb_emit_state_text()
+        return True
+
+    def _hyb_ping(token):
+        _hyb_write_line("ECHO:" + str(token).strip())
+
+    builtins.hyb_stream_set_enabled = hyb_stream_set_enabled
+    builtins.hyb_stream_is_enabled = hyb_stream_is_enabled
+    builtins.hyb_bridge_status = hyb_bridge_status
+    builtins.hyb_enter_local_mode = hyb_enter_local_mode
+    builtins.hyb_enter_command_mode = hyb_enter_command_mode
+    builtins.hyb_enter_exec_mode = hyb_enter_exec_mode
+    builtins.hyb_enter_hybrid_mode = hyb_enter_hybrid_mode
+    builtins.hyb_keypad_input = None
+    builtins.hyb_stream_updated_buffer = None
+
+    def _hyb_clean_protocol_line(line):
+        if line is None:
+            return ""
         try:
-            debounce_ms = int(float(getattr(typer, "debounce_delay_time", 0.100)) * 1000)
-            if debounce_ms > 0:
-                _hyb_write_line("HYB_KEY_DEB_MS:%d" % debounce_ms)
+            text = str(line)
         except Exception:
-            pass
+            return ""
 
-        try:
-            graph_sec = data_bucket.get("hyb_graph_fast_debounce_sec", None)
-            if graph_sec is None:
-                graph_sec = 0.001
-                data_bucket["hyb_graph_fast_debounce_sec"] = graph_sec
-            graph_ms = int(float(graph_sec) * 1000)
-            if graph_ms > 0:
-                _hyb_write_line("HYB_GRAPH_FAST_MS:%d" % graph_ms)
-        except Exception:
-            pass
+        # Keep protocol parser stable even if control bytes leak into the line buffer.
+        cleaned = ""
+        for ch in text:
+            code = ord(ch)
+            if 32 <= code <= 126:
+                cleaned += ch
+        return cleaned.strip()
 
-    # Keep injected keys and physical keypad available through one loop.
-    def _hyb_keypad_loop():
+    def _hyb_release_rows(rows):
+        for row_pin in rows:
+            try:
+                machine.Pin(row_pin, machine.Pin.OUT).value(1)
+            except Exception:
+                pass
+
+    def _hyb_wait_while_keypad_blocked(rows):
+        if not calsci_runtime.calsci_keypad_blocked():
+            return False
+        if _hyb_key_queue:
+            del _hyb_key_queue[:]
+        calsci_runtime.wait_if_repl_busy(lambda: _hyb_release_rows(rows))
+        return True
+
+    def hyb_keypad_input():
         rows = getattr(typer.keypad, "rows", [])
         cols = getattr(typer.keypad, "cols", [])
+
         while True:
+            if _hyb_wait_while_keypad_blocked(rows):
+                continue
             if _hyb_key_queue:
                 return _hyb_key_queue.pop(0)
+
             for row in range(len(rows)):
+                if _hyb_wait_while_keypad_blocked(rows):
+                    break
                 machine.Pin(rows[row], machine.Pin.OUT).value(0)
                 hit = None
+
                 for col in range(len(cols)):
+                    if _hyb_wait_while_keypad_blocked(rows):
+                        hit = None
+                        break
                     if machine.Pin(cols[col], machine.Pin.IN, machine.Pin.PULL_UP).value() == 0:
                         hit = (col, row)
                         break
+
                 machine.Pin(rows[row], machine.Pin.OUT).value(1)
+                if calsci_runtime.calsci_keypad_blocked():
+                    break
                 if hit is not None:
                     return hit
+
             _hyb_sleep_ms(5)
 
-    typer.keypad.keypad_loop = _hyb_keypad_loop
+    builtins.hyb_keypad_input = hyb_keypad_input
 
-    hybrid_sim.enable(True)
-    hybrid_sim.mode(False)
-    _hyb_write_line("HYBRID_PROTO:POLL_V1")
-    _hyb_emit_hybrid_config()
+    def _hyb_fb_changed():
+        if _hyb_mod is None:
+            return False
+        try:
+            return bool(_hyb_mod.changed_since(_hyb_state["last_frame_id"]))
+        except Exception:
+            return False
+
+    def _hyb_emit_state_text():
+        try:
+            fb = b""
+            frame_id = _hyb_state["last_frame_id"]
+            fb_seen = False
+
+            if _hyb_mod is not None:
+                frame = _hyb_mod.pop_frame()
+                if isinstance(frame, dict):
+                    frame_id = int(frame.get("frame_id", frame_id))
+                    fb = frame.get("fb", b"")
+                else:
+                    fb = _hyb_mod.read_fb()
+                    frame_id = int(_hyb_mod.frame_id())
+
+                if fb is None:
+                    fb = b""
+                if isinstance(fb, memoryview):
+                    fb = fb.tobytes()
+                elif not isinstance(fb, (bytes, bytearray)):
+                    fb = bytes(fb)
+
+                _hyb_state["last_frame_id"] = frame_id
+                fb_seen = True
+
+            has_pixels = False
+            for value in fb:
+                if value:
+                    has_pixels = True
+                    break
+
+            if has_pixels:
+                raw = _binascii.b2a_base64(fb)
+                if isinstance(raw, bytes):
+                    raw = raw.decode().strip()
+            else:
+                raw = ""
+
+            payload = {
+                "fb": raw,
+                "fb_seen": fb_seen,
+            }
+            _hyb_write_line("STATE:" + _json.dumps(payload))
+            _hyb_state["last_emit_ms"] = _hyb_ticks_ms()
+            _hyb_state["force_emit"] = False
+            return True
+        except Exception:
+            return False
+
+    def hyb_stream_updated_buffer():
+        while True:
+            if not _hyb_state["stream_enabled"]:
+                _hyb_sleep_ms(5)
+                continue
+
+            now = _hyb_ticks_ms()
+            emit_due = bool(_hyb_state["force_emit"])
+            if not emit_due and _hyb_ticks_diff(now, _hyb_state["last_probe_ms"]) >= 8:
+                _hyb_state["last_probe_ms"] = now
+                emit_due = _hyb_fb_changed()
+
+            periodic_due = _hyb_ticks_diff(now, _hyb_state["last_emit_ms"]) >= _HYB_EMIT_PERIODIC_MS
+
+            if emit_due or periodic_due:
+                if (not emit_due) or _hyb_ticks_diff(now, _hyb_state["last_emit_ms"]) >= _HYB_EMIT_DIRTY_MS:
+                    _hyb_emit_state_text()
+                _hyb_sleep_ms(1)
+            else:
+                _hyb_sleep_ms(4)
+
+    builtins.hyb_stream_updated_buffer = hyb_stream_updated_buffer
+
+    def _hyb_handle_line(line):
+        line = _hyb_clean_protocol_line(line)
+        if not line:
+            return
+
+        if line == "CTRL:HYBRID_OFF":
+            hyb_enter_exec_mode()
+            return
+
+        if line == "CTRL:COMMAND":
+            hyb_enter_command_mode()
+            return
+
+        if line == "CTRL:HYBRID_DISABLE":
+            hyb_enter_local_mode()
+            return
+
+        if line == "CTRL:HYBRID_ON":
+            hyb_enter_hybrid_mode(False)
+            return
+
+        if line == "CTRL:STATUS":
+            try:
+                _hyb_write_line("CTRL:STATUS:" + _json.dumps(hyb_bridge_status()))
+            except Exception:
+                _hyb_write_line("CTRL:STATUS:{}")
+            return
+
+        if line.startswith("PING:"):
+            _hyb_ping(line[5:])
+            return
+
+        if line == "SYNC:FULL":
+            if not _hyb_state["accept_protocol_stdin"]:
+                return
+            hyb_stream_set_enabled(True)
+            _hyb_emit_state_text()
+            _hyb_write_line("ECHO:SYNCFULL")
+            return
+
+        if line.startswith("KEY:"):
+            if not _hyb_state["accept_protocol_stdin"]:
+                return
+            args = line[4:].strip()
+            parts = args.split(",")
+            if len(parts) == 2:
+                if not _hyb_state["stream_enabled"]:
+                    hyb_stream_set_enabled(True)
+                _hyb_queue_key(parts[0], parts[1])
+            return
+
+        # OFF/disabled or unknown protocol: no action.
+        return
+
+    def _hyb_stdin_worker():
+        poller = None
+        if _uselect is not None:
+            try:
+                poller = _uselect.poll()
+                poller.register(sys.stdin, _uselect.POLLIN)
+            except Exception:
+                poller = None
+
+        line_buf = ""
+        while True:
+            try:
+                if not _hyb_state["protocol_enabled"]:
+                    if line_buf:
+                        line_buf = ""
+                    _hyb_sleep_ms(5)
+                    continue
+
+                if poller is not None:
+                    try:
+                        events = poller.poll(20)
+                    except Exception:
+                        events = ()
+                    if not events:
+                        _hyb_sleep_ms(1)
+                        continue
+
+                ch = sys.stdin.read(1)
+                if ch is None or ch == "":
+                    _hyb_sleep_ms(2)
+                    continue
+
+                if isinstance(ch, bytes):
+                    ch = ch.decode("utf-8", "ignore")
+                    if not ch:
+                        continue
+
+                # Drop non-text control bytes so protocol lines don't get poisoned.
+                if len(ch) == 1:
+                    code = ord(ch)
+                    if code < 32 and ch not in ("\r", "\n", "\t"):
+                        continue
+
+                if ch == "\r" or ch == "\n":
+                    if line_buf:
+                        _hyb_handle_line(line_buf)
+                        line_buf = ""
+                elif len(line_buf) < 128:
+                    line_buf += ch
+                else:
+                    line_buf = ""
+            except Exception:
+                _hyb_sleep_ms(10)
+
+    _hyb_write_line("HYBRID_PROTO:TXT")
+
+    try:
+        deb_ms = int(float(getattr(typer, "debounce_delay_time", 0.100)) * 1000)
+        if deb_ms > 0:
+            _hyb_write_line("HYB_KEY_DEB_MS:%d" % deb_ms)
+    except Exception:
+        pass
+
+    try:
+        graph_sec = data_bucket.get("hyb_graph_fast_debounce_sec", None)
+        if graph_sec is not None:
+            graph_ms = int(float(graph_sec) * 1000)
+            if graph_ms > 0:
+                _hyb_write_line("HYB_GRAPH_FAST_MS:%d" % graph_ms)
+    except Exception:
+        pass
+
     _hyb_write_line("HYBRID_READY")
-    _hyb_write_line("HYBRID_BAUD:115200")
+    _hyb_write_line("HYBRID_BAUD:%d" % HYBRID_BAUDRATE)
+    _hyb_write_line("HYBRID_MODE:LOCAL")
+
+    _thread.start_new_thread(_hyb_stdin_worker, ())
+    _thread.start_new_thread(hyb_stream_updated_buffer, ())
+    _hyb_use_local_keypad()
 
 except Exception as _hyb_exc:
-    print("HYBRID_BRIDGE_ERR:", _hyb_exc)
+    try:
+        _hyb_write_line("HYBRID_BRIDGE_ERR:%s" % _hyb_exc)
+    except Exception:
+        print("HYBRID_BRIDGE_ERR:", _hyb_exc)
     try:
         import sys as _sys
+
         _sys.print_exception(_hyb_exc)
     except Exception:
         pass

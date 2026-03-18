@@ -75,18 +75,26 @@ class Keypad:
             p = Pin(pin, Pin.OUT)
             p.value(1)
         self.state=True
+
+    def _release_rows(self):
+        for pin in self.rows:
+            try:
+                Pin(pin, Pin.OUT).value(1)
+            except Exception:
+                pass
+
     def keypad_loop(self):    
         # global numRows, rowPins, numCols, colPins, graph_letters
         while self.state==True:
             if calsci_runtime is not None:
-                calsci_runtime.wait_if_repl_busy()
+                calsci_runtime.wait_if_repl_busy(self._release_rows)
             for row in range(len(self.rows)):
                 if calsci_runtime is not None:
-                    calsci_runtime.wait_if_repl_busy()
+                    calsci_runtime.wait_if_repl_busy(self._release_rows)
                 Pin(self.rows[row], Pin.OUT).value(0)
                 for col in range(len(self.cols)):
                     if calsci_runtime is not None:
-                        calsci_runtime.wait_if_repl_busy()
+                        calsci_runtime.wait_if_repl_busy(self._release_rows)
                     buttonState = Pin(self.cols[col], Pin.IN, Pin.PULL_UP).value()
                     
                     if buttonState == 0:
