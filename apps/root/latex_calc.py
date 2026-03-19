@@ -11,7 +11,7 @@ except Exception:
 # Mathematical expression renderer for CalSci based on coordinate layout system
 # Renders fractions, exponents, and roots on 128x64 monochrome display
 
-from mocking import framebuf
+import framebuf  # type: ignore
 from data_modules.object_handler import display, typer, keypad_state_manager_reset, current_app
 from data_modules.characters import Characters
 import gc

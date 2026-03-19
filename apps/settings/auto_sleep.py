@@ -50,7 +50,7 @@ def autosleep_off():
 
 
 def auto_sleep():
-    # print("start of sleep_after", gc.mem_free())
+    # print("start of auto_sleep", gc.mem_free())
     # keypad_state_manager_reset()
     # global display, form, form_refresh, typer, nav
     display.clear_display()

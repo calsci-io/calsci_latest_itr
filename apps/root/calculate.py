@@ -127,12 +127,6 @@ def load_all_functions():
         SAFE_GLOBALS[name] = FUNCTIONS[name]  # 👈 critical
 
 
-# from process_modules import boot_up_data_update
-# import uasyncio as asyncio
-# from test_async import main, cancel_task
-# asyncio.run(main())
-# from 
-# from test_thread import run_espnow_message, end_espnow_task
 task=None
 def calculate():
     global ans

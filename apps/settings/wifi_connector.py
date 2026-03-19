@@ -13,9 +13,8 @@ except Exception:
 import network # type: ignore
 from data_modules.object_handler import nav, keypad_state_manager, menu, menu_refresh, form, form_refresh, typer, display
 import time
-from data_modules.object_handler import current_app, data_bucket, app
+from data_modules.object_handler import data_bucket, app
 import json
-import machine
 
 wifi_password_data = "/db/wifi.json"
 
@@ -34,12 +33,10 @@ def display_error_message(ssid):
     menu.update()
     menu_refresh.refresh()
 
-
     while True:
-        error_inp = typer.start_typing()
-        # if error_inp:
-        current_app[0]="settings"
-        current_app[1]="application_modules"
+        typer.start_typing()
+        app.set_app_name("settings")
+        app.set_group_name("root")
         break
 
 def display_ip_addresses(ssid):
@@ -58,8 +55,8 @@ def display_ip_addresses(ssid):
         inp_menu = typer.start_typing()
 
         if inp_menu == "ok" or inp_menu == "back":
-            current_app[0]="settings"
-            current_app[1]="application_modules"
+            app.set_app_name("settings")
+            app.set_group_name("root")
             break
         menu.update_buffer(inp_menu)
         menu_refresh.refresh()
@@ -92,8 +89,6 @@ def wifi_connector():
     while True:
         inp = typer.start_typing()
         if inp == "back":
-            current_app[0]="settings"
-            current_app[1]="application_modules"
             app.set_app_name("settings")
             app.set_group_name("root")
             break

@@ -10,12 +10,9 @@ except Exception:
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
-import utime as time  # type:ignore
 import network  # type: ignore
-import time
 import machine
-from data_modules.object_handler import nav, keypad_state_manager, menu, menu_refresh, typer, keymap, display
-from data_modules.object_handler import current_app, data_bucket
+from data_modules.object_handler import app, data_bucket, display, keypad_state_manager, menu, menu_refresh, nav, typer
 from process_modules import boot_up_data_update
 
 sta_if = network.WLAN(network.STA_IF)
@@ -45,8 +42,8 @@ def network_status(db={}):
     while True:
         inp = typer.start_typing()
         if inp in ["back"]:
-            current_app[0]="settings"
-            current_app[1]="application_modules"
+            app.set_app_name("settings")
+            app.set_group_name("root")
             break
         elif inp == "alpha" or inp == "beta":
             keypad_state_manager(x=inp)
@@ -56,12 +53,12 @@ def network_status(db={}):
             machine.deepsleep()
         elif inp=="ok" and menu.menu_list[menu.menu_cursor]=="Disconnect?":
             disconnect_network()
-            current_app[0]="settings"
-            current_app[1]="application_modules"
+            app.set_app_name("settings")
+            app.set_group_name("root")
             break
         elif inp=="ok" and menu.menu_list[menu.menu_cursor]!="Disconnect?":
-            current_app[0]="settings"
-            current_app[1]="application_modules"
+            app.set_app_name("settings")
+            app.set_group_name("root")
             break
         menu.update_buffer(inp)
         menu_refresh.refresh(state=nav.current_state())

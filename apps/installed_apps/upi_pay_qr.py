@@ -10,16 +10,10 @@ except Exception:
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
-try:
-    import framebuf  # type: ignore
-except ImportError:
-    from mocking import framebuf  # type: ignore
+import framebuf  # type: ignore
 
 import _thread
-try:
-    import utime as time  # type: ignore
-except ImportError:
-    import time  # type: ignore
+import utime as time  # type: ignore
 
 from data_modules.object_handler import (
     app,

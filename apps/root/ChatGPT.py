@@ -10,11 +10,22 @@ except Exception:
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
+import gc
+import network  # type: ignore
 import utime as time  # type:ignore
-from urandom import getrandbits  # type:ignore
+
+try:
+    import urequests as requests  # type: ignore
+except Exception:
+    import requests  # type: ignore
+
+try:
+    import ujson as json  # type: ignore
+except Exception:
+    import json
+
 from data_modules.object_handler import (
     app,
-    current_app,
     display,
     form,
     form_refresh,
@@ -25,132 +36,268 @@ from data_modules.object_handler import (
     typer,
 )
 
-# LOREM_50_WORDS = (
-#     "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor "
-#     "incididunt ut labore et dolore magna aliqua. Vestibulum ante ipsum primis in "
-#     "faucibus orci luctus et ultrices posuere cubilia curae; Integer non turpis ac "
-#     "velit fermentum posuere. Cras vitae sem nec ipsum aliquet, justo at feugiat "
-#     "velit interdum."
-# )
-
-LOREM_50_WORDS = (
-    "Bandi 'patana' trick nahi, connection hota hai. Confident raho, clean dikho, "
-    "apni life aur goals pe focus karo. Normal conversation se start karo, zyada "
-    "suno, thoda humour rakho. Desperate mat lagna. 2-3 achhi baat ke baad seedha "
-    "coffee ke liye pucho. Mana kare to respect karo."
+TEXT_COLS = 21
+SEARCH_STATE = "Search"
+MAX_RESULTS = 4
+DUCKDUCKGO_URL = (
+    "https://api.duckduckgo.com/?q={query}&format=json&no_redirect=1"
+    "&no_html=1&skip_disambig=1"
+)
+WIKIPEDIA_URL = (
+    "https://en.wikipedia.org/w/api.php?action=opensearch&search={query}"
+    "&limit=4&namespace=0&format=json"
 )
 
 
-NOISE_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-TEXT_COLS = 21
+def _pad_line(value):
+    value = str(value)
+    if len(value) > TEXT_COLS:
+        return value[:TEXT_COLS]
+    return value.ljust(TEXT_COLS)
 
 
-def _line21(s):
-    s = str(s)
-    if len(s) > TEXT_COLS:
-        return s[:TEXT_COLS]
-    return s.center(TEXT_COLS)
+def _wrap_text(value):
+    words = str(value).replace("\n", " ").split()
+    if not words:
+        return [""]
+
+    lines = []
+    current = ""
+    for word in words:
+        while len(word) > TEXT_COLS:
+            if current:
+                lines.append(current)
+                current = ""
+            lines.append(word[:TEXT_COLS])
+            word = word[TEXT_COLS:]
+
+        if not current:
+            current = word
+        elif len(current) + 1 + len(word) <= TEXT_COLS:
+            current += " " + word
+        else:
+            lines.append(current)
+            current = word
+
+    if current:
+        lines.append(current)
+    return lines
 
 
-def _render_text_lines(lines, state="ChatGPT"):
+def _render_text_lines(lines, state=SEARCH_STATE):
+    wrapped = []
+    for line in lines:
+        if line == "":
+            wrapped.append("")
+            continue
+        wrapped.extend(_wrap_text(line))
+
+    if not wrapped:
+        wrapped = ["No results"]
+
     text.all_clear()
-    text.update_buffer("".join(_line21(line) for line in lines))
+    text.update_buffer("".join(_pad_line(line) for line in wrapped))
     text_refresh.new = True
     text_refresh.refresh(state=state)
 
-chatgpt_logo_128x64 = bytearray(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80\xe0\xf0\xf8\xf8\x7c\x7c\x3e\x1e\x1f\x1f\x0f\x0f\x0f\x0f\x0f\x1f\x1f\x1e\x3e\xbc\xfc\xf8\xf8\xf0\xe0\xe0\xe0\xe0\xe0\xe0\xe0\xe0\xc0\xc0\xc0\x80\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80\xc0\xe0\xe0\xf0\xf0\xf0\xf8\xfc\xff\xff\xff\x07\x03\x00\x00\x00\x80\xc0\xc0\xe0\xe0\xf0\xf8\xf8\x7c\x7c\x3e\x1e\x1f\x0f\x0f\x07\x07\x03\x03\x83\x01\x01\x01\x01\x01\x03\x03\x03\x07\x0f\x1f\x3f\x7e\xfc\xf8\xf0\xe0\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80\xf0\xfc\xfe\xff\x3f\x0f\x07\x03\x01\x01\x00\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\xff\xff\xff\x03\x01\x81\x80\xc0\xe0\xe0\xf0\xf0\xf8\xf8\x9c\x1c\x0e\x0f\x07\x0f\x0f\x1f\x1e\x3e\x7c\x7c\xf8\xf8\xf0\xe0\xe0\xc0\xc0\x81\xff\xff\xff\xff\x78\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x7f\xff\xff\xff\xe1\x00\x00\x00\x00\x00\x00\x00\xff\xff\xff\xff\xc0\x00\x00\x00\x00\x00\xff\xff\xff\x0f\x07\x07\x03\x01\x01\x00\x00\x01\x01\x03\x07\x07\x0f\xfe\xfe\xfc\x38\x78\x70\xf0\xe0\xe0\xc0\x80\x81\x01\x03\x07\x07\x0f\x1f\x3f\xff\xff\xf8\xf0\xc0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x0f\x1f\xff\xff\xfc\xf8\xf0\xe0\xe0\xc0\x80\x81\x01\x03\x07\x07\x0f\x0e\x1e\x1c\x3f\x7f\x7f\xf0\xe0\xe0\xc0\x80\x80\x00\x00\x80\x80\xc0\xe0\xe0\xf0\xff\xff\xff\x00\x00\x00\x00\x00\x03\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x87\xff\xff\xff\xfe\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0e\xff\xff\xff\xff\x81\x03\x03\x07\x07\x0f\x1f\x1f\x3e\x3e\x7c\x78\xf8\xf0\xf0\xe0\xf0\x70\x78\x39\x1f\x1f\x0f\x0f\x07\x07\x03\x01\x81\x80\xc0\xff\xff\xff\x00\x00\x00\x00\x00\x00\xff\xff\xff\xff\x00\x80\x80\xc0\xe0\xf0\xfc\xff\x7f\x3f\x0f\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x07\x0f\x1f\x3f\x7e\xfc\xf8\xf0\xe0\xc0\xc0\xc0\xc0\x80\x80\x80\x80\xc1\xc0\xc0\xe0\xe0\xf0\xf0\xf8\x78\x7c\x3e\x3e\x1f\x1f\x0f\x07\x07\x03\x03\x01\x00\x00\x00\xc0\xe0\xff\xff\xff\x3f\x1f\x0f\x0f\x0f\x07\x07\x03\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x01\x03\x03\x03\x07\x07\x07\x07\x07\x07\x07\x07\x0f\x1f\x1f\x3f\x3d\x7c\x78\xf8\xf8\xf0\xf0\xf0\xf0\xf0\xf8\xf8\x78\x7c\x3e\x3e\x1f\x1f\x0f\x07\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
 
-
-def _show_startup_logo():
-    display.clear_display()
-    display.graphics(chatgpt_logo_128x64)
-    time.sleep_ms(1000)
-    display.clear_display()
-
-
-def _reset_prompt_form(prompt_value=" "):
-    if prompt_value == "":
-        prompt_value = " "
-    form.input_list = {"inp_0": prompt_value}
-    form.form_list = ["prompt:", "inp_0"]
-    form.menu_cursor = 1
-    form.input_cursor = len(prompt_value) if prompt_value != " " else 0
-    form.input_display_position = 0
+def _reset_prompt_form(query_value=" "):
+    if not query_value:
+        query_value = " "
+    form.input_list = {"inp_0": query_value}
+    form.form_list = ["web search:", "inp_0"]
     form.update()
+    form.menu_cursor = 1
+    form.display_cursor = 1
+    form.input_cursor = len(query_value) if query_value != " " else 0
+    form.input_display_position = 0
 
 
 def _go_home():
     app.set_app_name("home")
     app.set_group_name("root")
-    current_app[0] = "home"
 
 
-def _rand_idx(limit):
-    if limit <= 0:
-        return 0
-    return getrandbits(16) % limit
+def _urlencode(value):
+    encoded = []
+    for byte in str(value).encode("utf-8"):
+        if (
+            48 <= byte <= 57
+            or 65 <= byte <= 90
+            or 97 <= byte <= 122
+            or byte in b"-_.~"
+        ):
+            encoded.append(chr(byte))
+        elif byte == 32:
+            encoded.append("+")
+        else:
+            encoded.append("%{:02X}".format(byte))
+    return "".join(encoded)
 
 
-def _rand_ms(min_ms, max_ms):
-    if max_ms <= min_ms:
-        return min_ms
-    return min_ms + (getrandbits(16) % (max_ms - min_ms + 1))
+def _http_get_json(url):
+    response = None
+    try:
+        try:
+            response = requests.get(url, timeout=10)
+        except TypeError:
+            response = requests.get(url)
+
+        status_code = getattr(response, "status_code", 200)
+        if status_code != 200:
+            return None, "HTTP {}".format(status_code)
+
+        try:
+            data = response.json()
+        except Exception:
+            data = json.loads(response.text)
+        return data, None
+    except Exception as exc:
+        return None, str(exc)
+    finally:
+        if response is not None:
+            try:
+                response.close()
+            except Exception:
+                pass
 
 
-def _thinking_nav_animation_on_prompt(total_ms=1200, step_ms=150):
-    # Runs on prompt screen navbar: Thinking. Thinking.. Thinking... Thinking..
-    dots_seq = [".", "..", "...", ".."]
-    frames = total_ms // step_ms
-    for i in range(frames):
-        form_refresh.refresh(state="             ")
-        form_refresh.refresh(state="Thinking" + dots_seq[i % len(dots_seq)])
-        time.sleep_ms(step_ms)
+def _flatten_duckduckgo_topics(items, results):
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        text_value = item.get("Text")
+        if text_value:
+            results.append(text_value)
+        topics = item.get("Topics")
+        if isinstance(topics, list):
+            _flatten_duckduckgo_topics(topics, results)
 
 
-def _stream_fake_gpt(text_to_stream):
-    # No separate thinking window; animate in navbar on prompt screen
-    _thinking_nav_animation_on_prompt(total_ms=1200, step_ms=100)
+def _search_duckduckgo(query):
+    url = DUCKDUCKGO_URL.format(query=_urlencode(query))
+    data, error = _http_get_json(url)
+    if error:
+        return None, error
 
-    text.all_clear()
-    text_refresh.new = True
-    text_refresh.refresh(state=" > ChatGPT")
+    lines = ["Query: {}".format(query), "Source: DuckDuckGo", ""]
+    found_content = False
 
-    for ch in text_to_stream:
-        if ch in " ,.;" and _rand_idx(100) < 35:
-            time.sleep_ms(_rand_ms(400, 600))
+    heading = data.get("Heading")
+    abstract = data.get("AbstractText")
+    if heading:
+        lines.append("Top match: {}".format(heading))
+        found_content = True
+    if abstract:
+        lines.append(abstract)
+        found_content = True
 
-        if ch not in " \n" and _rand_idx(100) < 28:
-            fake_ch = NOISE_CHARS[_rand_idx(len(NOISE_CHARS))]
-            text.update_buffer(fake_ch)
-            text_refresh.refresh(state="ChatGPT")
-            time.sleep_ms(_rand_ms(20, 60))
-            text.update_buffer("nav_b")
+    related = []
+    results = data.get("Results")
+    if isinstance(results, list):
+        for item in results:
+            if isinstance(item, dict) and item.get("Text"):
+                related.append(item["Text"])
+    topics = data.get("RelatedTopics")
+    if isinstance(topics, list):
+        _flatten_duckduckgo_topics(topics, related)
 
-        text.update_buffer(ch)
-        text_refresh.refresh(state="ChatGPT")
-        time.sleep_ms(_rand_ms(18, 45))
+    unique_related = []
+    for item in related:
+        if item not in unique_related:
+            unique_related.append(item)
+        if len(unique_related) >= MAX_RESULTS:
+            break
+
+    if unique_related:
+        if found_content:
+            lines.append("")
+        lines.append("More results:")
+        for index, item in enumerate(unique_related, 1):
+            lines.append("{}. {}".format(index, item))
+        found_content = True
+
+    if not found_content:
+        return None, "No instant answer"
+    return lines, None
+
+
+def _search_wikipedia(query):
+    url = WIKIPEDIA_URL.format(query=_urlencode(query))
+    data, error = _http_get_json(url)
+    if error:
+        return None, error
+
+    if not isinstance(data, list) or len(data) < 4:
+        return None, "Invalid response"
+
+    titles = data[1]
+    descriptions = data[2]
+
+    if not titles:
+        return None, "No results"
+
+    lines = ["Query: {}".format(query), "Source: Wikipedia", ""]
+    for index, title in enumerate(titles[:MAX_RESULTS], 1):
+        lines.append("{}. {}".format(index, title))
+        if index - 1 < len(descriptions) and descriptions[index - 1]:
+            lines.append(descriptions[index - 1])
+        lines.append("")
+
+    while lines and lines[-1] == "":
+        lines.pop()
+    return lines, None
+
+
+def _build_search_result(query):
+    if not query:
+        return ["Enter a search query.", "Use OK to search."]
+
+    sta_if = network.WLAN(network.STA_IF)
+    if not sta_if.active() or not sta_if.isconnected():
+        return [
+            "WiFi is not connected.",
+            "Open Settings.",
+            "Use wifi_app first.",
+        ]
+
+    gc.collect()
+
+    duck_lines, duck_error = _search_duckduckgo(query)
+    if duck_lines:
+        return duck_lines
+
+    wiki_lines, wiki_error = _search_wikipedia(query)
+    if wiki_lines:
+        return wiki_lines
+
+    error_lines = ["Search failed."]
+    if duck_error:
+        error_lines.append("DuckDuckGo: {}".format(duck_error))
+    if wiki_error:
+        error_lines.append("Wikipedia: {}".format(wiki_error))
+    error_lines.append("Try a shorter query.")
+    return error_lines
 
 
 def ChatGPT():
     display.clear_display()
-    _show_startup_logo()
-
     _reset_prompt_form()
     form_refresh.refresh(state=nav.current_state())
 
-    mode = "input"  # input | response
-    last_prompt = " "
+    mode = "input"
+    last_query = " "
 
     while True:
         inp = typer.start_typing()
 
-        if inp == "alpha" or inp == "beta":
+        if inp in ("alpha", "beta"):
             keypad_state_manager(x=inp)
             if mode == "input":
                 form.update_buffer("")
                 form_refresh.refresh(state=nav.current_state())
             else:
-                text_refresh.refresh(state="ChatGPT")
+                text_refresh.refresh(state=SEARCH_STATE)
             time.sleep(0.03)
             continue
 
@@ -160,32 +307,35 @@ def ChatGPT():
                 break
 
             if inp == "ok":
-                entered_prompt = form.inp_list().get("inp_0", " ").strip()
-                last_prompt = entered_prompt if entered_prompt else " "
-                _stream_fake_gpt(LOREM_50_WORDS)
+                last_query = form.inp_list().get("inp_0", " ").strip() or " "
+                _render_text_lines(
+                    [
+                        "Searching...",
+                        last_query,
+                    ]
+                )
+                result_lines = _build_search_result(last_query.strip())
+                _render_text_lines(result_lines)
                 mode = "response"
                 continue
 
             form.update_buffer(inp)
             form_refresh.refresh(state=nav.current_state())
-
-        else:  # mode == "response"
+        else:
             if inp == "back":
                 display.clear_display()
-                _reset_prompt_form(last_prompt)
+                _reset_prompt_form(last_query)
                 form_refresh.refresh(state=nav.current_state())
                 mode = "input"
                 continue
 
             if inp == "ok":
-                display.clear_display()
-                _reset_prompt_form(last_prompt)
-                form_refresh.refresh(state=nav.current_state())
-                mode = "input"
+                result_lines = _build_search_result(last_query.strip())
+                _render_text_lines(result_lines)
                 continue
 
             if inp in ("nav_u", "nav_d", "nav_l", "nav_r", "nav_b"):
                 text.update_buffer(inp)
-                text_refresh.refresh(state="ChatGPT")
+                text_refresh.refresh(state=SEARCH_STATE)
 
         time.sleep(0.03)

@@ -1,6 +1,5 @@
 import gc
 import machine
-import esp32
 import st7565 as display
 from sleeping_features import keypad_normal
 
@@ -22,95 +21,6 @@ except Exception:
 gc.enable()
 print("free ram initially=", gc.mem_free())
 print("ram allocated initially=", gc.mem_alloc())
-
-# ----------------------------
-# Triple boot helpers
-# ----------------------------
-print("=================================")
-print("  CalSci - Triple Boot System")
-print("=================================")
-print("  boot.switch_to_cpp()   - Reboot into C++")
-print("  boot.switch_to_rust()  - Reboot into Rust")
-print("  boot.boot_info()       - Show current partition")
-print("=================================")
-
-
-def boot_info():
-    cur = esp32.Partition(esp32.Partition.RUNNING)
-    print("Running from:", cur.info())
-    print()
-    print("All app partitions:")
-    for part in esp32.Partition.find(esp32.Partition.TYPE_APP):
-        print(" ", part.info())
-
-
-def switch_to_cpp():
-    _switch_to("ota_1", "C++")
-
-
-def switch_to_rust():
-    _switch_to("ota_2", "Rust")
-
-
-def switch_to_micropython():
-    _switch_to("ota_0", "MicroPython")
-
-
-def _decode_partition_field(value):
-    if isinstance(value, bytes):
-        try:
-            return value.decode()
-        except Exception:
-            return None
-    if isinstance(value, str):
-        return value
-    return None
-
-
-def _partition_by_label(label):
-    try:
-        return esp32.Partition(label)
-    except Exception:
-        pass
-
-    try:
-        parts = esp32.Partition.find(esp32.Partition.TYPE_APP)
-    except Exception:
-        return None
-
-    for part in parts:
-        try:
-            info = part.info()
-        except Exception:
-            continue
-
-        fields = info if isinstance(info, (tuple, list)) else (info,)
-        for field in fields:
-            if _decode_partition_field(field) == label:
-                return part
-    return None
-
-
-def _switch_to(label, name):
-    import time as _time
-
-    try:
-        part = _partition_by_label(label)
-        if part is None:
-            print("Error switching to", label, ": partition not found")
-            return
-
-        part.set_boot()
-        print("Next boot:", name, "(" + label + ")")
-        display.clear_display()
-        menu.menu_list = ["Switching to:", name, "Rebooting..."]
-        menu.update()
-        menu_refresh.refresh()
-        print("Restarting in 1 second...")
-        _time.sleep(1)
-        machine.reset()
-    except Exception as exc:
-        print("Error switching to", label, ":", exc)
 
 
 # ----------------------------

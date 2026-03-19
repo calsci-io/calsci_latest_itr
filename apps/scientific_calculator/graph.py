@@ -7,10 +7,7 @@
 # - Discontinuity-safe line joining
 # - Partial cursor refresh (column + bottom page)
 
-try:
-    import framebuf  # type: ignore
-except ImportError:
-    from mocking import framebuf  # type: ignore
+import framebuf  # type: ignore
 
 import gc
 import math
