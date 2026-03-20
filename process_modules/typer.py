@@ -4,6 +4,7 @@ import time
 import machine
 from machine import Pin
 from process_modules.navigation import request_navigation_from_key
+from process_modules.keypad_modes import reset_mode, should_auto_reset_after_input, toggle_mode_lock
 
 try:
     import esp32
@@ -12,9 +13,10 @@ except Exception:
 
 
 class Typer:
-    def __init__(self, keypad, keypad_map):
+    def __init__(self, keypad, keypad_map, nav=None):
         self.keypad = keypad
         self.keypad_map = keypad_map
+        self.nav = nav
         self.debounce_delay_time = 0.2
         self.min_debounce_delay_time = 0.12
         self._switch_latched_key = None
@@ -209,6 +211,16 @@ class Typer:
                 return "off"
             if text in ("home", "settings", "back"):
                 request_navigation_from_key(text)
+            if text == "lock":
+                if self.nav is not None:
+                    toggle_mode_lock(keymap=self.keypad_map, nav=self.nav)
+                return ""
+            if self.nav is not None and should_auto_reset_after_input(
+                keymap=self.keypad_map,
+                nav=self.nav,
+                key_name=text,
+            ):
+                reset_mode(keymap=self.keypad_map, nav=self.nav)
             return text
         except Exception:
             swdt.stop()

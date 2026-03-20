@@ -24,6 +24,7 @@ from process_modules.form_buffer_uploader import Tbf as form_tbf
 from process_modules.typer import Typer
 from input_modules.keypad import Keypad
 from data_modules.keypad_map import Keypad_5X8
+from process_modules.keypad_modes import handle_mode_key, reset_mode
 
 # from output_modules.st7565_spi import Display
 # import st7565 as display
@@ -64,10 +65,14 @@ display=display
 # import display
 keymap = Keypad_5X8()
 keyin = Keypad(rows=keypad_rows, cols=keypad_cols)
-typer = Typer(keypad=keyin, keypad_map=keymap)
 
 chrs=Characters()
 builtins.chrs=chrs
+
+nav = Nav(disp_out=display, chrs=chrs)
+builtins.nav=nav
+
+typer = Typer(keypad=keyin, keypad_map=keymap, nav=nav)
 
 text=Textbuffer()
 menu=Menu()
@@ -77,9 +82,6 @@ builtins.menu=menu
 builtins.form=form
 
 builtins.typer=typer
-
-nav = Nav(disp_out=display, chrs=chrs)
-builtins.nav=nav
 
 text_refresh=text_tbf(disp_out=display, chrs=chrs, t_b=text)
 menu_refresh=menu_tbf(disp_out=display, chrs=chrs, m_b=menu)
@@ -98,22 +100,10 @@ apps_installer=Apps()
 builtins.apps_installer=apps_installer
 
 def keypad_state_manager(x):
-    if keymap.state == "a" and x[0] == "a":
-        keymap.key_change(state="d")
-        nav.state_change(state="d")
-    elif keymap.state == "b" and x[0] == "b":
-        keymap.key_change(state="d")
-        nav.state_change(state="d")
-    elif keymap.state == "A" and x[0] == "A":
-        keymap.key_change(state="d")
-        nav.state_change(state="d")
-    else:
-        keymap.key_change(state=x[0])
-        nav.state_change(state=x[0])
+    handle_mode_key(keymap=keymap, nav=nav, key_name=x)
 
 def keypad_state_manager_reset():
-    keymap.key_change(state="d")
-    nav.state_change(state="d")
+    reset_mode(keymap=keymap, nav=nav)
 
 
 # def test_deep_sleep_awake():

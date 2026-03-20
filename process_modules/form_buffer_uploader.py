@@ -69,6 +69,9 @@ class Tbf:
         
         self.disp_out.set_page_address(7)
         self.disp_out.set_column_address(0)
+        for _ in range(128):
+            self.disp_out.write_data(0b00000000)
+        self.disp_out.set_column_address(0)
         for j in state:
             chtr_byte_data = self.chrs.invert_letter(j)
             cursor_line = 0b11111111
