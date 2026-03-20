@@ -8,7 +8,7 @@ except Exception:
     pass
 
 from math import *
-from data_modules.object_handler import display, text, nav, text_refresh, typer, keypad_state_manager, keypad_state_manager_reset, current_app, app
+from data_modules.object_handler import display, text, nav, text_refresh, typer, keypad_state_manager, keypad_state_manager_reset, current_app, app, keymap
 from data_modules.db_instance import fun_db
 from data_modules.object_handler import data_bucket
 
@@ -44,6 +44,9 @@ FUNCTIONS = {}
 # }
 
 ans=[0,0]
+
+LOCKABLE_KEYPAD_STATES = ("a", "A", "b")
+ALPHA_KEYPAD_STATES = ("a", "A")
 
 SAFE_GLOBALS = {
     "__builtins__": {},
@@ -127,6 +130,18 @@ def load_all_functions():
         SAFE_GLOBALS[name] = FUNCTIONS[name]  # 👈 critical
 
 
+def _set_keypad_mode(state):
+    keymap.key_change(state=state)
+    nav.state_change(state=state)
+
+
+def _calculate_nav_state(mode_locked):
+    current_state = nav.current_state().strip()
+    if mode_locked and keymap.state in LOCKABLE_KEYPAD_STATES:
+        return "{} locked".format(current_state)
+    return nav.current_state()
+
+
 # from process_modules import boot_up_data_update
 # import uasyncio as asyncio
 # from test_async import main, cancel_task
@@ -138,6 +153,7 @@ def calculate():
     global ans
     load_all_functions()
     global task
+    mode_locked = False
     keypad_state_manager_reset()
     display.clear_display()
     if text.retain_data == False:
@@ -146,16 +162,31 @@ def calculate():
         text.refresh_area=(0, text.rows * text.cols)
         text.retain_data = False
     text_refresh.new=True
-    text_refresh.refresh()
+    text_refresh.refresh(state=_calculate_nav_state(mode_locked))
     task=None
     try:
         while True:
 
             x = typer.start_typing()
+            current_mode = keymap.state
             if x == "back":
                 current_app[0]="home"
                 current_app[1] = "application_modules"
                 break
+
+            if x == "lock":
+                if current_mode in LOCKABLE_KEYPAD_STATES:
+                    if mode_locked:
+                        mode_locked = False
+                        keypad_state_manager_reset()
+                    else:
+                        mode_locked = True
+                    text.update_buffer("")
+                    text_refresh.refresh(state=_calculate_nav_state(mode_locked))
+                    continue
+
+                text_refresh.refresh(state=_calculate_nav_state(mode_locked))
+                continue
 
             if (x== "exe" or x == "ok") and text.text_buffer[0] != "𖤓":
                 try:
@@ -187,15 +218,43 @@ def calculate():
                 text_refresh.new=True
                 continue
 
-            elif x == "alpha" or x == "beta":                        
-                keypad_state_manager(x=x)
+            elif x == "alpha":
+                if mode_locked and current_mode in ALPHA_KEYPAD_STATES:
+                    mode_locked = False
+                    keypad_state_manager_reset()
+                else:
+                    mode_locked = False
+                    if current_mode in ALPHA_KEYPAD_STATES:
+                        keypad_state_manager_reset()
+                    else:
+                        _set_keypad_mode("a")
                 text.update_buffer("")
-                text_refresh.refresh(state=nav.current_state())
+                text_refresh.refresh(state=_calculate_nav_state(mode_locked))
+                continue
+
+            elif x == "beta":
+                if mode_locked and current_mode == "b":
+                    mode_locked = False
+                    keypad_state_manager_reset()
+                else:
+                    mode_locked = False
+                    if current_mode == "b":
+                        keypad_state_manager_reset()
+                    else:
+                        _set_keypad_mode("b")
+                text.update_buffer("")
+                text_refresh.refresh(state=_calculate_nav_state(mode_locked))
                 continue
             elif x == "caps":
-                keypad_state_manager(x="A")
+                if current_mode in ALPHA_KEYPAD_STATES:
+                    if current_mode == "a":
+                        _set_keypad_mode("A")
+                    else:
+                        _set_keypad_mode("a")
+                else:
+                    keypad_state_manager(x="A")
                 text.update_buffer("")
-                text_refresh.refresh(state=nav.current_state())
+                text_refresh.refresh(state=_calculate_nav_state(mode_locked))
                 continue
             
             elif x == "toolbox":
@@ -206,10 +265,10 @@ def calculate():
             elif not (x== "exe" or x == "ok"):
                 text.update_buffer(x)
 
-            if nav.current_state().strip() in ["alpha", "beta", "ALPHA"]:
+            if (not mode_locked) and keymap.state in LOCKABLE_KEYPAD_STATES:
                 keypad_state_manager_reset()
                 text.update_buffer("")
-                text_refresh.refresh(state=nav.current_state())
+                text_refresh.refresh(state=_calculate_nav_state(mode_locked))
                 continue
             
             if text.text_buffer[0] == "𖤓":
@@ -217,7 +276,7 @@ def calculate():
                 text.all_clear()
             
 
-            text_refresh.refresh(state=nav.current_state())
+            text_refresh.refresh(state=_calculate_nav_state(mode_locked))
             # time.sleep(0.2)
 
     except Exception as e:
