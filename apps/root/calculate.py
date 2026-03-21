@@ -150,15 +150,16 @@ def calculate():
         while True:
 
             x = typer.start_typing()
+            expression = text.value()
             if x == "back":
                 current_app[0]="home"
                 current_app[1] = "application_modules"
                 break
 
-            if (x== "exe" or x == "ok") and text.text_buffer[0] != "𖤓":
+            if (x== "exe" or x == "ok") and expression.strip() != "":
                 try:
                     # 1. Get the raw result from eval
-                    raw_res = eval(text.text_buffer[:text.text_buffer_nospace], SAFE_GLOBALS)
+                    raw_res = eval(expression, SAFE_GLOBALS)
                     
                     # 2. Format it using an f-string
                     res = f"= {raw_res:.12g}"
