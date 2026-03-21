@@ -53,7 +53,7 @@ DEFAULT_CONFIG = {
     "ble_name": "CalSci Nav",
 }
 TEXT_COLS = 21
-TEXT_ROWS = 7
+TEXT_ROWS = int(getattr(text, "rows", 8))
 
 HID_KEY_ENTER = 0x28
 HID_KEY_BACKSPACE = 0x2A
@@ -319,7 +319,7 @@ def _read_key_raw():
     if delay_ms > 0:
         _sleep_ms(delay_ms)
 
-    key_inp = keyin.keypad_loop()
+    key_inp = keyin.keypad_loop(idle_callback=nav.maybe_hide)
     col = int(key_inp[0])
     row = int(key_inp[1])
     layer_before = str(getattr(keymap, "state", "d"))

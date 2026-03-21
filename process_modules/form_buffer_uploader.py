@@ -11,71 +11,107 @@ except Exception:
 # Licensed under the MIT License.
 
 class Tbf:
-    def __init__(self, disp_out, chrs, f_b):
+    def __init__(self, disp_out, chrs, f_b, nav=None):
         self.disp_out = disp_out
         self.chrs = chrs
         self.f_b = f_b
+        self.nav = nav
         self.disp_out.clear_display()
+        self.last_state = ""
 
-    def refresh(self, state="default"):
-        buf = self.f_b.buffer()
-        ref_rows = self.f_b.ref_ar()
-        for i in range(ref_rows[0], ref_rows[1]):
-            self.disp_out.set_page_address(i)
-            self.disp_out.set_column_address(0)
-            if "inp_" in buf[i]:
-                buf_current = (
-                    "=>"
-                    + self.f_b.inp_list()[self.f_b.buffer()[i]][
-                        self.f_b.inp_display_position() : self.f_b.inp_display_position()
-                        + self.f_b.inp_cols()
-                    ]
-                )
-            else:
-                buf_current = buf[i]
-            if len(buf_current) < self.f_b.inp_cols():
-                buf_current += " " * (self.f_b.inp_cols() - len(buf_current) + 2)
-            j_counter = 0
-            for j in buf_current:
-                if i == self.f_b.cursor() and "inp_" not in buf[i]:
-                    chtr_byte_data = self.chrs.invert_letter(j)
-                    cursor_line = 0b11111111
-                    for k in chtr_byte_data:
-                        self.disp_out.write_data(k)
-                    self.disp_out.write_data(cursor_line)
-                elif i == self.f_b.cursor() and "inp_" in buf[i]:
-                    if (
-                        j_counter + self.f_b.inp_display_position()
-                        == self.f_b.inp_cursor() + 2
-                    ):
-                        chtr_byte_data = self.chrs.invert_letter(j)
-                        cursor_line = 0b11111111
-                        for k in chtr_byte_data:
-                            self.disp_out.write_data(k)
-                        self.disp_out.write_data(cursor_line)
-                    else:
-                        chtr_byte_data = self.chrs.Chr2bytes(j)
-                        cursor_line = 0b00000000
-                        for k in chtr_byte_data:
-                            self.disp_out.write_data(k)
-                        self.disp_out.write_data(cursor_line)
-                else:
-                    chtr_byte_data = self.chrs.Chr2bytes(j)
-                    cursor_line = 0b00000000
-                    for k in chtr_byte_data:
-                        self.disp_out.write_data(k)
-                    self.disp_out.write_data(cursor_line)
-                j_counter += 1
-        
-        self.disp_out.set_page_address(7)
+    def _clear_page(self, page_index):
+        self.disp_out.set_page_address(page_index)
         self.disp_out.set_column_address(0)
         for _ in range(128):
             self.disp_out.write_data(0b00000000)
+
+    def _draw_page(self, buf, page_index):
+        self._clear_page(page_index)
+        if page_index < 0 or page_index >= self.f_b.rows or page_index >= len(buf):
+            return
+
+        if "inp_" in buf[page_index]:
+            row_text = (
+                "=>"
+                + self.f_b.inp_list()[self.f_b.buffer()[page_index]][
+                    self.f_b.inp_display_position() : self.f_b.inp_display_position()
+                    + self.f_b.inp_cols()
+                ]
+            )
+        else:
+            row_text = buf[page_index]
+        max_cols = self.f_b.inp_cols() + 2
+        row_text = row_text[:max_cols]
+        if len(row_text) < max_cols:
+            row_text += " " * (max_cols - len(row_text))
+
+        self.disp_out.set_page_address(page_index)
         self.disp_out.set_column_address(0)
-        for j in state:
-            chtr_byte_data = self.chrs.invert_letter(j)
-            cursor_line = 0b11111111
-            for k in chtr_byte_data:
-                self.disp_out.write_data(k)
+        for col_index, char in enumerate(row_text):
+            if page_index == self.f_b.cursor() and "inp_" not in buf[page_index]:
+                char_bytes = self.chrs.invert_letter(char)
+                cursor_line = 0b11111111
+            elif page_index == self.f_b.cursor() and "inp_" in buf[page_index]:
+                if col_index + self.f_b.inp_display_position() == self.f_b.inp_cursor() + 2:
+                    char_bytes = self.chrs.invert_letter(char)
+                    cursor_line = 0b11111111
+                else:
+                    char_bytes = self.chrs.Chr2bytes(char)
+                    cursor_line = 0b00000000
+            else:
+                char_bytes = self.chrs.Chr2bytes(char)
+                cursor_line = 0b00000000
+            for byte in char_bytes:
+                self.disp_out.write_data(byte)
             self.disp_out.write_data(cursor_line)
-            j_counter+=1
+        for _ in range(max(0, 128 - (len(row_text) * 6))):
+            self.disp_out.write_data(0b00000000)
+
+    def _draw_state(self, state):
+        if self.nav is not None:
+            self.nav.draw_state(state)
+            return
+        self._clear_page(7)
+        state = str(state or "")
+        if state == "":
+            return
+        self.disp_out.set_column_address(0)
+        for char in state:
+            char_bytes = self.chrs.invert_letter(char)
+            for byte in char_bytes:
+                self.disp_out.write_data(byte)
+            self.disp_out.write_data(0b11111111)
+
+    def restore_bottom_row(self):
+        try:
+            self._draw_page(self.f_b.buffer(), self.f_b.rows - 1)
+        except Exception:
+            self._clear_page(7)
+        self.last_state = ""
+
+    def refresh(self, state=None):
+        if state is None:
+            state = self.nav.current_state() if self.nav is not None else ""
+
+        buf = self.f_b.buffer()
+        ref_rows = self.f_b.ref_ar()
+        for page_index in range(ref_rows[0], min(ref_rows[1], self.f_b.rows)):
+            self._draw_page(buf, page_index)
+
+        if self.nav is not None:
+            nav_overlay_visible = (
+                str(state or "") != ""
+                and str(state or "") == self.nav.current_state()
+                and self.nav.is_visible()
+            )
+            self.nav.set_restore_callback(
+                self.restore_bottom_row if nav_overlay_visible else None
+            )
+
+        state = str(state or "")
+        if state != "":
+            self._draw_state(state)
+        elif self.last_state != "":
+            self.restore_bottom_row()
+
+        self.last_state = state

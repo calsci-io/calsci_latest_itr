@@ -389,14 +389,34 @@ def format_number(value):
     return "{:.3g} ".format(value)
 
 
-def _display_full(fb_buf):
+def _display_full_raw(fb_buf):
     display.graphics(fb_buf, page=0, column=0, width=DISPLAY_WIDTH, pages=DISPLAY_PAGES)
 
 
-def _display_page(fb_buf, page_index):
+def _display_page_raw(fb_buf, page_index):
     start = page_index * DISPLAY_WIDTH
     end = start + DISPLAY_WIDTH
     display.graphics(memoryview(fb_buf)[start:end], page=page_index, column=0, width=DISPLAY_WIDTH, pages=1)
+
+
+def _refresh_nav_overlay(fb_buf):
+    overlay_state = nav.current_state()
+    nav.set_restore_callback(
+        (lambda: _display_page_raw(fb_buf, BOTTOM_PAGE_INDEX)) if overlay_state else None
+    )
+    if overlay_state:
+        nav.draw_state(overlay_state)
+
+
+def _display_full(fb_buf):
+    _display_full_raw(fb_buf)
+    _refresh_nav_overlay(fb_buf)
+
+
+def _display_page(fb_buf, page_index):
+    _display_page_raw(fb_buf, page_index)
+    if page_index == BOTTOM_PAGE_INDEX:
+        _refresh_nav_overlay(fb_buf)
 
 
 def _display_plot_column(fb_buf, x_pixel, out_col_buf):

@@ -13,7 +13,7 @@ except Exception:
 class Form:
     def __init__(
         self,
-        rows=7,
+        rows=8,
         menu_cursor=0,
         menu_display_position=0,
         input_list=None,

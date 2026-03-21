@@ -83,9 +83,9 @@ builtins.form=form
 
 builtins.typer=typer
 
-text_refresh=text_tbf(disp_out=display, chrs=chrs, t_b=text)
-menu_refresh=menu_tbf(disp_out=display, chrs=chrs, m_b=menu)
-form_refresh=form_tbf(disp_out=display, chrs=chrs, f_b=form)
+text_refresh=text_tbf(disp_out=display, chrs=chrs, t_b=text, nav=nav)
+menu_refresh=menu_tbf(disp_out=display, chrs=chrs, m_b=menu, nav=nav)
+form_refresh=form_tbf(disp_out=display, chrs=chrs, f_b=form, nav=nav)
 builtins.text_refresh=text_refresh
 builtins.menu_refresh=menu_refresh
 builtins.form_refresh=form_refresh

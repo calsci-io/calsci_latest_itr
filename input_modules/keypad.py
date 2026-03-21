@@ -59,9 +59,14 @@ class Keypad:
             p = Pin(pin, Pin.OUT)
             p.value(1)
         self.state=True
-    def keypad_loop(self):    
+    def keypad_loop(self, idle_callback=None):    
         # global numRows, rowPins, numCols, colPins, graph_letters
         while self.state==True:
+            if idle_callback is not None:
+                try:
+                    idle_callback()
+                except Exception:
+                    pass
             for row in range(len(self.rows)):
 
                 Pin(self.rows[row], Pin.OUT).value(0)

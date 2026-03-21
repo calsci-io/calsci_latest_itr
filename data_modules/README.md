@@ -10,9 +10,9 @@ This README documents the **modules and objects made available by `data_modules/
 
 - **Input/Navigation**
   - `keymap` (`Keypad_5X8`) and `typer` (`Typer`) are created for keypad input handling.【F:data_modules/object_handler.py†L56-L58】
-  - `keypad_state_manager(...)` and `keypad_state_manager_reset()` update the shared alpha/beta/ALPHA mode state. `lock` is handled centrally by `typer.start_typing()`, and `nav.current_state()` will show `alpha locked` / `beta locked` / `ALPHA locked` automatically when that mode is pinned.【F:data_modules/object_handler.py†L91-L107】
+  - `keypad_state_manager(...)` and `keypad_state_manager_reset()` update the shared alpha/beta/ALPHA mode state. `lock` is handled centrally by `typer.start_typing()`, and `nav.current_state()` now acts like a timed overlay: it flashes mode labels such as `alpha locked` / `beta locked` / `ALPHA locked` for about one second, then the screen’s original bottom row is restored automatically.【F:data_modules/object_handler.py†L91-L107】
 - **Buffers**
-  - `text`, `menu`, `form` are instantiated from `Textbuffer`, `Menu`, and `Form` respectively.【F:data_modules/object_handler.py†L63-L68】
+  - `text`, `menu`, `form` are instantiated from `Textbuffer`, `Menu`, and `Form` respectively. `text` and `form` now use the full display height; the bottom row is no longer permanently reserved for the navbar.【F:data_modules/object_handler.py†L63-L68】
 - **Navbar**
   - `nav = Nav(...)` is created and used to show alpha/beta status text in the UI.【F:data_modules/object_handler.py†L72-L73】
 - **Uploaders**

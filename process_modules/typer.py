@@ -197,10 +197,14 @@ class Typer:
         names = {0: "MicroPython", 1: "C++", 2: "Rust"}
         self._switch_to_partition("ota_{}".format(target_slot), names[target_slot])
 
+    def _idle_tasks(self):
+        if self.nav is not None:
+            self.nav.maybe_hide()
+
     def start_typing(self):
         time.sleep(self.debounce_delay_time)
         try:
-            key_inp = self.keypad.keypad_loop()
+            key_inp = self.keypad.keypad_loop(idle_callback=self._idle_tasks)
             col = int(key_inp[0])
             row = int(key_inp[1])
             self._handle_live_switch_shortcut(row=row, col=col)

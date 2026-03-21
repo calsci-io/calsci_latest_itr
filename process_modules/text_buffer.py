@@ -11,7 +11,7 @@ except Exception:
 # Licensed under the MIT License.
 
 class Textbuffer:
-    def __init__(self, text_buffer="𖤓", rows=7, cols=21):
+    def __init__(self, text_buffer="𖤓", rows=8, cols=21):
         if text_buffer != "𖤓":
             text_buffer += "𖤓"
         self.text_buffer = text_buffer

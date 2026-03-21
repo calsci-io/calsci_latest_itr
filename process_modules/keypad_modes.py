@@ -6,13 +6,19 @@ def is_lockable_state(state):
     return state in LOCKABLE_KEYPAD_STATES
 
 
-def _apply_state(keymap, nav, state, locked=False):
+def _apply_state(keymap, nav, state, locked=False, show_overlay=True):
     keymap.key_change(state=state)
-    nav.state_change(state=state, locked=locked)
+    nav.state_change(state=state, locked=locked, show=show_overlay)
 
 
-def reset_mode(keymap, nav):
-    _apply_state(keymap=keymap, nav=nav, state="d", locked=False)
+def reset_mode(keymap, nav, show_overlay=False):
+    _apply_state(
+        keymap=keymap,
+        nav=nav,
+        state="d",
+        locked=False,
+        show_overlay=show_overlay,
+    )
 
 
 def handle_mode_key(keymap, nav, key_name):
@@ -21,16 +27,28 @@ def handle_mode_key(keymap, nav, key_name):
 
     if key_name in ("alpha", "a"):
         if current_state in ALPHA_KEYPAD_STATES:
-            reset_mode(keymap=keymap, nav=nav)
+            reset_mode(keymap=keymap, nav=nav, show_overlay=True)
         else:
-            _apply_state(keymap=keymap, nav=nav, state="a", locked=False)
+            _apply_state(
+                keymap=keymap,
+                nav=nav,
+                state="a",
+                locked=False,
+                show_overlay=True,
+            )
         return True
 
     if key_name in ("beta", "b"):
         if current_state == "b":
-            reset_mode(keymap=keymap, nav=nav)
+            reset_mode(keymap=keymap, nav=nav, show_overlay=True)
         else:
-            _apply_state(keymap=keymap, nav=nav, state="b", locked=False)
+            _apply_state(
+                keymap=keymap,
+                nav=nav,
+                state="b",
+                locked=False,
+                show_overlay=True,
+            )
         return True
 
     if key_name in ("caps", "A"):
@@ -40,6 +58,7 @@ def handle_mode_key(keymap, nav, key_name):
                 nav=nav,
                 state="A",
                 locked=nav.is_mode_locked(),
+                show_overlay=True,
             )
         elif current_state == "A":
             _apply_state(
@@ -47,9 +66,16 @@ def handle_mode_key(keymap, nav, key_name):
                 nav=nav,
                 state="a",
                 locked=nav.is_mode_locked(),
+                show_overlay=True,
             )
         else:
-            _apply_state(keymap=keymap, nav=nav, state="A", locked=False)
+            _apply_state(
+                keymap=keymap,
+                nav=nav,
+                state="A",
+                locked=False,
+                show_overlay=True,
+            )
         return True
 
     return False
@@ -58,13 +84,13 @@ def handle_mode_key(keymap, nav, key_name):
 def toggle_mode_lock(keymap, nav):
     current_state = getattr(keymap, "state", "d")
     if not is_lockable_state(current_state):
-        nav.set_locked(False)
+        nav.set_locked(False, show=False)
         return False
 
     if nav.is_mode_locked():
-        reset_mode(keymap=keymap, nav=nav)
+        reset_mode(keymap=keymap, nav=nav, show_overlay=True)
     else:
-        nav.set_locked(True)
+        nav.set_locked(True, show=True)
     return True
 
 
