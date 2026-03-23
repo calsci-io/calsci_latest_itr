@@ -11,6 +11,14 @@
         "3": {
             "app_name": "dino",
             "group_name": "installed_apps"
+        },
+        "4": {
+            "app_name": "random_items",
+            "group_name": "installed_apps"
+        },
+        "5": {
+            "app_name": "card_dashboard",
+            "group_name": "installed_apps"
         }
     }
 }

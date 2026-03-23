@@ -22,7 +22,7 @@
     {
         "name": "stream_deck",
         "folder": "application_modules",
-        "visibility": true
+        "visibility": false
     },
     {
         "name": "installed_apps",
@@ -32,7 +32,7 @@
     {
         "name": "scientific_calculator",
         "folder":"application_modules",
-        "visibility": true
+        "visibility": false
     },
     {
         "name": "function_locker",

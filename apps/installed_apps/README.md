@@ -6,12 +6,14 @@ This folder contains **user‑installed or add‑on apps** (sensors, demos, util
 
 - **`add_2_nums.py`** – Simple addition demo.
 - **`buzzer.py`** – Buzzer control/demo.
+- **`card_dashboard.py`** – Compact LVGL card dashboard with modal detail popups.
 - **`data_reciever.py`** – Data receiver utility.
 - **`dht11.py`** – DHT11 temperature/humidity sensor.
 - **`dsgroup.py`** – Grouped sensor/app demo.
 - **`dynamic_form.py`** – Dynamic form demo.
 - **`flame_sensor.py`** – Flame sensor demo.
 - **`master_slave.py`** – Master/slave example (communication demo).
+- **`random_items.py`** – LVGL random-item menu with a visible scrollbar.
 - **`rgb.py`** – RGB LED controller.
 - **`set.py`** – Settings helper app.
 - **`slave_connector.py`** – Slave connector for comms.
