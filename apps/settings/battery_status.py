@@ -102,7 +102,7 @@ def _battery_label(percent):
 
 
 def _power_label(charging):
-    return "CHG" if charging else "BAT"
+    return "BAT" if charging else "CHG"
 
 
 class _BatteryDashboard:
@@ -206,7 +206,7 @@ class _BatteryDashboard:
         x = 79
         y = 15
         w = 44
-        h = 26
+        h = 29
         voltage_text = "{:.3f}V".format(self.voltage if self.voltage is not None else 0)
         status_text = _battery_label(self.percent)
         power_text = _power_label(self.charging)
@@ -215,9 +215,9 @@ class _BatteryDashboard:
         self.canvas.fill_rect(x + 1, y + 1, w - 2, 9, 1)
         self.canvas.draw_text_in_rect(status_text, x + 1, y + 1, w - 2, 9, color=0, align="center")
 
-        self.canvas.draw_text_in_rect(voltage_text, x + 2, y + 12, w - 4, 9, color=1, align="center")
-        self.canvas.fill_rect(x + 8, y + 19, w - 16, 7, 1)
-        self.canvas.draw_text_in_rect(power_text, x + 8, y + 18, w - 16, 9, color=0, align="center")
+        self.canvas.draw_text_in_rect(voltage_text, x + 2, y + 11, w - 4, 9, color=1, align="center")
+        self.canvas.fill_rect(x + 8, y + 21, w - 16, 7, 1)
+        self.canvas.draw_text_in_rect(power_text, x + 8, y + 20, w - 16, 9, color=0, align="center")
 
     def _draw_range_bar(self):
         gauge_x = 18
