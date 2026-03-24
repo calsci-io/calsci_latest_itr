@@ -200,17 +200,13 @@ class _BatteryDashboard:
             self.canvas.fill_rect(separator_x, inner_y, segment_gap, inner_h, 0)
 
         percent_text = "{}%".format(self.percent)
-        chip_w = min(44, text_width(percent_text) + 10)
-        chip_x = x + max(2, (w - chip_w) // 2)
-        chip_y = y + h + 3
-        self.canvas.fill_rect(chip_x, chip_y, chip_w, 9, 1)
-        self.canvas.draw_text_in_rect(percent_text, chip_x, chip_y, chip_w, 9, color=0, align="center")
+        self.canvas.draw_text_in_rect(percent_text, x, y + h + 3, w, 9, color=1, align="center")
 
     def _draw_info_panel(self):
         x = 79
         y = 15
         w = 44
-        h = 33
+        h = 26
         voltage_text = "{:.3f}V".format(self.voltage if self.voltage is not None else 0)
         status_text = _battery_label(self.percent)
         power_text = _power_label(self.charging)
@@ -219,19 +215,16 @@ class _BatteryDashboard:
         self.canvas.fill_rect(x + 1, y + 1, w - 2, 9, 1)
         self.canvas.draw_text_in_rect(status_text, x + 1, y + 1, w - 2, 9, color=0, align="center")
 
-        self.canvas.draw_text_in_rect(voltage_text, x + 2, y + 14, w - 4, 9, color=1, align="center")
-        self.canvas.rect(x + 6, y + 25, w - 12, 7, 1)
-        self.canvas.draw_text_in_rect(power_text, x + 6, y + 24, w - 12, 9, color=1, align="center")
+        self.canvas.draw_text_in_rect(voltage_text, x + 2, y + 12, w - 4, 9, color=1, align="center")
+        self.canvas.fill_rect(x + 8, y + 19, w - 16, 7, 1)
+        self.canvas.draw_text_in_rect(power_text, x + 8, y + 18, w - 16, 9, color=0, align="center")
 
     def _draw_range_bar(self):
         gauge_x = 18
-        gauge_y = 50
+        gauge_y = 49
         gauge_w = 92
         gauge_h = 5
         indicator_x = gauge_x + int((gauge_w - 1) * self.percent / 100)
-
-        self.canvas.draw_text("3.5V", 4, 42, color=1)
-        self.canvas.draw_text_right("4.2V", 124, 42, color=1)
 
         self.canvas.rect(gauge_x, gauge_y, gauge_w, gauge_h, 1)
         if self.percent > 0:
@@ -247,8 +240,8 @@ class _BatteryDashboard:
             self.canvas.draw_text_center(state_text, 56, color=0)
             return
 
-        footer_text = "OK refresh   Back exit"
-        self.canvas.draw_text_center(footer_text, 56, color=1)
+        self.canvas.draw_text("3.5V", 4, 56, color=1)
+        self.canvas.draw_text_right("4.2V", 124, 56, color=1)
 
     def render(self):
         self._lock()
