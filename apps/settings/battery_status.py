@@ -173,34 +173,63 @@ class _BatteryDashboard:
         self.canvas.fill_rect(0, 0, 128, 10, 1)
         self.canvas.draw_text_center("Battery Status", 1, color=0)
 
-    def _draw_battery_body(self):
-        x = 8
-        y = 16
-        w = 62
-        h = 23
-        terminal_w = 4
-        terminal_h = 8
+    def _draw_battery_frame(self, x, y, w, h, terminal_w, terminal_h):
+        right = x + w - 1
+        bottom = y + h - 1
+        terminal_x = x + w
+        terminal_y = y + ((h - terminal_h) // 2)
 
         self.canvas.rect(x, y, w, h, 1)
-        self.canvas.fill_rect(x + w, y + ((h - terminal_h) // 2), terminal_w, terminal_h, 1)
+        self.canvas.rect(x + 1, y + 1, w - 2, h - 2, 1)
 
-        inner_x = x + 3
-        inner_y = y + 3
-        inner_w = w - 6
-        inner_h = h - 6
+        # Trim a few inner-corner pixels so the outline looks softer on the mono LCD.
+        self.canvas.pixel(x + 1, y + 1, 0)
+        self.canvas.pixel(right - 1, y + 1, 0)
+        self.canvas.pixel(x + 1, bottom - 1, 0)
+        self.canvas.pixel(right - 1, bottom - 1, 0)
 
-        fill_w = int((inner_w * self.percent) / 100)
-        if fill_w > 0:
-            self.canvas.fill_rect(inner_x, inner_y, fill_w, inner_h, 1)
+        self.canvas.rect(terminal_x, terminal_y, terminal_w, terminal_h, 1)
+        self.canvas.fill_rect(terminal_x + 1, terminal_y + 2, max(1, terminal_w - 2), max(1, terminal_h - 4), 1)
 
-        segment_gap = 2
-        segment_w = max(5, (inner_w - 3 * segment_gap) // 4)
-        for idx in range(1, 4):
-            separator_x = inner_x + idx * segment_w + (idx - 1) * segment_gap
-            self.canvas.fill_rect(separator_x, inner_y, segment_gap, inner_h, 0)
+    def _draw_battery_cells(self, x, y, w, h):
+        cell_count = 4
+        cell_gap = 2
+        cell_inner_h = max(1, h - 2)
+        usable_w = max(0, w - ((cell_count - 1) * cell_gap))
+        cell_w = max(8, usable_w // cell_count)
+        total_cells_w = cell_count * cell_w + (cell_count - 1) * cell_gap
+        start_x = x + max(0, (w - total_cells_w) // 2)
+
+        for idx in range(cell_count):
+            cell_x = start_x + idx * (cell_w + cell_gap)
+            self.canvas.rect(cell_x, y, cell_w, h, 1)
+
+            inner_fill_w = max(1, cell_w - 2)
+            fill_ratio = _clamp((self.percent / 25.0) - idx, 0.0, 1.0)
+            fill_w = int(round(inner_fill_w * fill_ratio))
+            if fill_w > 0:
+                self.canvas.fill_rect(cell_x + 1, y + 1, fill_w, cell_inner_h, 1)
+
+    def _draw_battery_body(self):
+        x = 7
+        y = 15
+        w = 64
+        h = 24
+        terminal_w = 4
+        terminal_h = 10
+        cell_pad_x = 4
+        cell_pad_y = 5
+
+        self._draw_battery_frame(x, y, w, h, terminal_w, terminal_h)
+        self._draw_battery_cells(
+            x + cell_pad_x,
+            y + cell_pad_y,
+            w - (2 * cell_pad_x),
+            h - (2 * cell_pad_y),
+        )
 
         percent_text = "{}%".format(self.percent)
-        self.canvas.draw_text_in_rect(percent_text, x, y + h + 3, w, 9, color=1, align="center")
+        self.canvas.draw_text_in_rect(percent_text, x, y + h + 3, w + terminal_w, 9, color=1, align="center")
 
     def _draw_info_panel(self):
         x = 79
