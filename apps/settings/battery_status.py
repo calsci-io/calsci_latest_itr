@@ -216,7 +216,7 @@ class _BatteryDashboard:
         self.canvas.draw_text_in_rect(status_text, x + 1, y + 1, w - 2, 9, color=0, align="center")
 
         self.canvas.draw_text_in_rect(voltage_text, x + 2, y + 11, w - 4, 9, color=1, align="center")
-        self.canvas.fill_rect(x + 8, y + 21, w - 16, 7, 1)
+        self.canvas.fill_rect(x + 8, y + 19, w - 16, 9, 1)
         self.canvas.draw_text_in_rect(power_text, x + 8, y + 20, w - 16, 9, color=0, align="center")
 
     def _draw_range_bar(self):
