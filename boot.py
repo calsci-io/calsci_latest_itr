@@ -17,17 +17,6 @@ display.graphics(cal_sci_buffer)
 # display.write_instruction(0x81) #for only 3.0
 # display.write_instruction(0x06)
 gc.enable()
-print("free ram initially=", gc.mem_free())
-print("ram allocated initially=", gc.mem_alloc())
-
-# --- Triple Boot System ---
-print("=================================")
-print("  CalSci - Triple Boot System")
-print("=================================")
-print("  boot.switch_to_cpp()   - Reboot into C++")
-print("  boot.switch_to_rust()  - Reboot into Rust")
-print("  boot.boot_info()       - Show current partition")
-print("=================================")
 
 
 def boot_info():
@@ -103,16 +92,21 @@ def _switch_to(label, name):
         part.set_boot()
         print("Next boot:", name, "(" + label + ")")
         display.clear_display()
-        menu.menu_list = ["Switching to:", name, "Rebooting..."]
-        menu.update()
-        menu_refresh.refresh()
+        try:
+            from data_modules.object_handler import menu, menu_refresh
+
+            menu.menu_list = ["Switching to:", name, "Rebooting..."]
+            menu.update()
+            menu_refresh.refresh()
+        except Exception:
+            pass
         print("Restarting in 1 second...")
         _time.sleep(1)
         machine.reset()
     except Exception as e:
         print("Error switching to", label, ":", e)
 # --- End Triple Boot System ---
-from apps.settings.backlight import backlight_pin
+backlight_pin = machine.Pin(5, machine.Pin.OUT)
 # backlight_pin.off() #3.0
 backlight_pin.on() #2.9
 # from test_thread import run_thread
@@ -121,15 +115,9 @@ backlight_pin.on() #2.9
 # from test_async import main
 # asyncio.run(main())
 import builtins
-from data_modules.object_handler import text, menu, form, text_refresh, menu_refresh, form_refresh, typer, data_bucket, sta_if
-builtins.display=display
-builtins.text=text
-builtins.menu=menu
-builtins.form=form
-builtins.text_refresh=text_refresh
-builtins.text_refresh=menu_refresh
-builtins.text_refresh=form_refresh
-builtins.typer=typer
+from data_modules.object_handler import data_bucket, sta_if
+
+builtins.display = display
 
 # Auto WiFi connect at boot (respects settings.auto_wifi_connect).
 builtins.sta_if = sta_if

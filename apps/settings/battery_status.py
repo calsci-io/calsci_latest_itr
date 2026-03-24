@@ -2,6 +2,7 @@ import st7565 as display
 
 try:
     import tools
+
     if hasattr(display, "graphics") and not hasattr(display.graphics, "pixels_changed"):
         display.graphics = tools.refresh(display.graphics, pixels_changed=200)
 except Exception:
@@ -10,156 +11,282 @@ except Exception:
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
-import time
-import json
-from data_modules.object_handler import nav, keypad_state_manager, typer, keymap
-from data_modules.object_handler import current_app
+try:
+    import utime as time  # type: ignore
+except ImportError:
+    import time  # type: ignore
+
+try:
+    import machine  # type: ignore
+    from machine import ADC, Pin  # type: ignore
+except ImportError:
+    from mocking import machine  # type: ignore
+    from mocking.machine import ADC, Pin  # type: ignore
+
+try:
+    import _thread  # type: ignore
+except Exception:
+    _thread = None
+
+from apps.installed_apps._mono_ui import MonoCanvas, clip_text_px, text_width
+from data_modules.object_handler import nav, keypad_state_manager, keypad_state_manager_reset, typer
 from process_modules import boot_up_data_update
-from data_modules.object_handler import app
-from machine import Pin, ADC, deepsleep
+
+
+_BATTERY_MIN_V = 3.5
+_BATTERY_MAX_V = 4.2
+_REFRESH_MS = 800
+_SLEEP_SLICE_MS = 120
+
 adc_pin = Pin(6)
 adc = ADC(adc_pin)
 adc.atten(ADC.ATTN_11DB)
 adc.width(ADC.WIDTH_12BIT)
 
-charge_pin=Pin(4, Pin.IN, Pin.PULL_DOWN)
-# from sleeping_features import test_deep_sleep_awake
-def battery_status_none():
-    display.clear_display()
-    # json_file = "/db/application_modules_app_list.json" 
-    # with open(json_file, "r") as file:
-    #     data = json.load(file)
+charge_pin = Pin(4, Pin.IN, Pin.PULL_DOWN)
 
-    # menu_list = []
-    # # for apps in data:
-    # #     if apps["visibility"]:
-    
-    # #         menu_list.append(apps["name"])
 
-    # menu.menu_list=menu_list
-    # menu.update()
-    # menu_refresh.refresh()
+def _sleep_ms(ms):
     try:
-        while True:
-            raw_value = adc.read()
-            voltage = (raw_value / 4095) * 3.3
-            menu_list = ["battery voltage:", str(round(2*voltage +0.220, 3))]
-            menu.menu_list=menu_list
-            menu.update()
-            menu_refresh.refresh()
-            # inp = typer.start_typing()
-
-            # if inp == "back":
-            #     pass
-            # elif inp == "alpha" or inp == "beta":                        
-            #     keypad_state_manager(x=inp)
-            #     menu.update_buffer("")
-            # elif inp =="ok":
-            #     app.set_app_name(menu.menu_list[menu.menu_cursor])
-            #     app.set_group_name("root")
-            #     break
-
-            # menu.update_buffer(inp)
-            # menu_refresh.refresh(state=nav.current_state())
-            time.sleep(1)
-    except Exception as e:
-        print(f"Error: {e}")
+        time.sleep_ms(ms)
+    except Exception:
+        time.sleep(ms / 1000)
 
 
-"""
-things to be made:
-1. dynamic menu buffer uploader in thread
-2. dynamic menu buffer data generator
-3. dynamic global switch which is turned on by data generator and turned off by uploader
-4. a switch for turning on the data generator on or off
-5. if a function is given to the data generator then it will stay on or it will turn off
-"""
-from dynamic_stuff.dynamic_switches import *
-from dynamic_stuff.dynamic_menu_buffer_uploader import uploader
-# from dynamic_stuff.dynamic_menu_buffer_data_generator import data_generator
-import time
-import json
-from data_modules.object_handler import nav, keypad_state_manager, typer
-from data_modules.object_handler import current_app
-# from process_modules import boot_up_data_update
-from data_modules.object_handler import app
-import _thread
-from dynamic_stuff.dynamic_data import menu_items_data
-def single_fun():
-    data_generator()
-    uploader()
-    time.sleep(0.1)
+def _ticks_ms():
+    try:
+        return time.ticks_ms()
+    except Exception:
+        return int(time.time() * 1000)
 
-def data_generator():
 
-    while data_generator_status[0]==True:
-        raw_value = adc.read()
-        voltage = (raw_value / 4095) * 3.3
-        print(voltage)
-        menu_list = ["battery voltage:", str(round(2*voltage +0.220, 3))+" "+str(charge_pin.value())]
-        if round(2*voltage +0.220, 3) <= 3.7 :
-            # deepsleep()
-            pass
-        data = {0:menu_list[0],1:menu_list[1]}
-        # menu_items_data.clear()
-        # menu_items_data=data
-        menu_items_data.clear()
-        menu_items_data.update(data)
+def _ticks_diff(now_ms, past_ms):
+    try:
+        return time.ticks_diff(now_ms, past_ms)
+    except Exception:
+        return now_ms - past_ms
 
-        for i in menu_items_data:
-            menu.menu_list[i]=menu_items_data[i]
-        time.sleep(5)
+
+def _clamp(value, minimum, maximum):
+    return max(minimum, min(maximum, value))
+
+
+def _read_battery_voltage(samples=10):
+    total = 0
+    sample_count = max(1, int(samples))
+    for _ in range(sample_count):
+        total += adc.read()
+    raw_value = total / sample_count
+    cell_voltage = (raw_value / 4095.0) * 3.3
+    return round((2 * cell_voltage) + 0.220, 3)
+
+
+def _battery_percent(voltage):
+    span = _BATTERY_MAX_V - _BATTERY_MIN_V
+    if span <= 0:
+        return 0
+    level = int(round(((float(voltage) - _BATTERY_MIN_V) * 100) / span))
+    return int(_clamp(level, 0, 100))
+
+
+def _battery_label(percent):
+    if percent <= 10:
+        return "EMPTY"
+    if percent <= 25:
+        return "LOW"
+    if percent <= 55:
+        return "MID"
+    if percent <= 85:
+        return "GOOD"
+    return "FULL"
+
+
+def _power_label(charging):
+    return "CHG" if charging else "BAT"
+
+
+class _BatteryDashboard:
+    def __init__(self):
+        self.canvas = MonoCanvas()
+        self.running = False
+        self.voltage = None
+        self.percent = 0
+        self.charging = False
+        self._render_at_ms = 0
+        self._render_lock = None
+        if _thread is not None:
+            try:
+                self._render_lock = _thread.allocate_lock()
+            except Exception:
+                self._render_lock = None
+
+    def _lock(self):
+        if self._render_lock is not None:
+            try:
+                self._render_lock.acquire()
+            except Exception:
+                pass
+
+    def _unlock(self):
+        if self._render_lock is not None:
+            try:
+                self._render_lock.release()
+            except Exception:
+                pass
+
+    def start(self):
+        self.running = True
+        self.refresh(force=True)
+        if _thread is not None:
+            try:
+                _thread.start_new_thread(self._refresh_worker, ())
+            except Exception:
+                self._refresh_worker_enabled = False
+
+    def stop(self):
+        self.running = False
+        _sleep_ms(_SLEEP_SLICE_MS)
+
+    def _measure(self):
+        new_voltage = _read_battery_voltage()
+        if self.voltage is None:
+            self.voltage = new_voltage
+        else:
+            self.voltage = round((self.voltage * 3 + new_voltage) / 4, 3)
+        self.charging = bool(charge_pin.value())
+        self.percent = _battery_percent(self.voltage)
+
+    def refresh(self, force=False):
+        now_ms = _ticks_ms()
+        if (not force) and _ticks_diff(now_ms, self._render_at_ms) < _REFRESH_MS:
+            return
+        self._measure()
+        self._render_at_ms = now_ms
+        self.render()
+
+    def _refresh_worker(self):
+        while self.running:
+            self.refresh(force=False)
+            _sleep_ms(_SLEEP_SLICE_MS)
+
+    def _draw_title(self):
+        self.canvas.fill_rect(0, 0, 128, 10, 1)
+        self.canvas.draw_text_center("Battery Status", 1, color=0)
+
+    def _draw_battery_body(self):
+        x = 8
+        y = 16
+        w = 62
+        h = 23
+        terminal_w = 4
+        terminal_h = 8
+
+        self.canvas.rect(x, y, w, h, 1)
+        self.canvas.fill_rect(x + w, y + ((h - terminal_h) // 2), terminal_w, terminal_h, 1)
+
+        inner_x = x + 3
+        inner_y = y + 3
+        inner_w = w - 6
+        inner_h = h - 6
+
+        fill_w = int((inner_w * self.percent) / 100)
+        if fill_w > 0:
+            self.canvas.fill_rect(inner_x, inner_y, fill_w, inner_h, 1)
+
+        segment_gap = 2
+        segment_w = max(5, (inner_w - 3 * segment_gap) // 4)
+        for idx in range(1, 4):
+            separator_x = inner_x + idx * segment_w + (idx - 1) * segment_gap
+            self.canvas.fill_rect(separator_x, inner_y, segment_gap, inner_h, 0)
+
+        percent_text = "{}%".format(self.percent)
+        chip_w = min(44, text_width(percent_text) + 10)
+        chip_x = x + max(2, (w - chip_w) // 2)
+        chip_y = y + h + 3
+        self.canvas.fill_rect(chip_x, chip_y, chip_w, 9, 1)
+        self.canvas.draw_text_in_rect(percent_text, chip_x, chip_y, chip_w, 9, color=0, align="center")
+
+    def _draw_info_panel(self):
+        x = 79
+        y = 15
+        w = 44
+        h = 33
+        voltage_text = "{:.3f}V".format(self.voltage if self.voltage is not None else 0)
+        status_text = _battery_label(self.percent)
+        power_text = _power_label(self.charging)
+
+        self.canvas.rect(x, y, w, h, 1)
+        self.canvas.fill_rect(x + 1, y + 1, w - 2, 9, 1)
+        self.canvas.draw_text_in_rect(status_text, x + 1, y + 1, w - 2, 9, color=0, align="center")
+
+        self.canvas.draw_text_in_rect(voltage_text, x + 2, y + 14, w - 4, 9, color=1, align="center")
+        self.canvas.rect(x + 6, y + 25, w - 12, 7, 1)
+        self.canvas.draw_text_in_rect(power_text, x + 6, y + 24, w - 12, 9, color=1, align="center")
+
+    def _draw_range_bar(self):
+        gauge_x = 18
+        gauge_y = 50
+        gauge_w = 92
+        gauge_h = 5
+        indicator_x = gauge_x + int((gauge_w - 1) * self.percent / 100)
+
+        self.canvas.draw_text("3.5V", 4, 42, color=1)
+        self.canvas.draw_text_right("4.2V", 124, 42, color=1)
+
+        self.canvas.rect(gauge_x, gauge_y, gauge_w, gauge_h, 1)
+        if self.percent > 0:
+            self.canvas.fill_rect(gauge_x + 1, gauge_y + 1, max(1, int((gauge_w - 2) * self.percent / 100)), gauge_h - 2, 1)
+
+        marker_x = int(_clamp(indicator_x, gauge_x + 1, gauge_x + gauge_w - 2))
+        self.canvas.vline(marker_x, gauge_y - 1, gauge_h + 2, 1)
+
+    def _draw_footer(self):
+        state_text = str(nav.current_state() or "").strip()
+        if state_text:
+            self.canvas.fill_rect(0, 63 - 7, 128, 8, 1)
+            self.canvas.draw_text_center(state_text, 56, color=0)
+            return
+
+        footer_text = "OK refresh   Back exit"
+        self.canvas.draw_text_center(footer_text, 56, color=1)
+
+    def render(self):
+        self._lock()
+        try:
+            self.canvas.clear()
+            self._draw_title()
+            self._draw_battery_body()
+            self._draw_info_panel()
+            self._draw_range_bar()
+            self._draw_footer()
+            self.canvas.flush()
+        finally:
+            self._unlock()
+
 
 def battery_status():
-    # _thread.start_new_thread(single_fun, ())
-    global data_generator_status, new_upload
-    new_upload[0] = False
-    data_generator_status[0] = False
     display.clear_display()
-    # json_file = "/db/application_modules_app_list.json" 
-    # with open(json_file, "r") as file:
-    #     data = json.load(file)
+    keypad_state_manager_reset()
 
-    # menu_list = []
-    # for apps in data:
-    #     if apps["visibility"]:
-    #         menu_list.append(apps["name"])
-    menu_list=["press ok", "to start"]
-    menu.menu_list=menu_list
-    menu.update()
-    menu_refresh.refresh()
+    dashboard = _BatteryDashboard()
+    dashboard.start()
+
     try:
         while True:
-            # raw_value = adc.read()
-            # voltage = (raw_value / 4095) * 3.3
-            # menu_list = ["battery voltage:", str(round(2*voltage +0.220, 3))]
             inp = typer.start_typing()
-            if inp == "back":
-                app.set_app_name("installed_apps")
-                app.set_group_name("root")
-                new_upload[0] = False
-                data_generator_status[0]=False
-                break
-            elif inp =="ok":
-                
-                # app.set_app_name(menu.menu_list[menu.menu_cursor])
-                # app.set_group_name("root")
-                # break
-                # if new_upload == False or data_generator_status == False:
-                
-                # new_upload[0] = True
-                # data_generator_status[0] = True
-                new_upload[0] = not new_upload[0]
-                data_generator_status[0] = not data_generator_status[0]
-                # print("switch status changed")
-                if new_upload[0] == True or data_generator_status[0] == True:
 
-                #     _thread.start_new_thread(single_fun, ())
-                #     print("starting the thread")
-                    _thread.start_new_thread(uploader, ())
-                    _thread.start_new_thread(data_generator, ())
-            menu.update_buffer(inp)
-            menu_refresh.refresh()
-            # time.sleep(0.2)
-    except Exception as e:
-        print(f"Error: {e}")
+            if inp in ("alpha", "beta", "caps"):
+                keypad_state_manager(x=inp)
+                dashboard.render()
+                continue
+
+            if inp in ("ok", "exe", "nav_u", "nav_d", "nav_l", "nav_r"):
+                dashboard.refresh(force=True)
+                continue
+
+            if inp == "off":
+                boot_up_data_update.main()
+                machine.deepsleep()
+    finally:
+        dashboard.stop()
+        keypad_state_manager_reset()

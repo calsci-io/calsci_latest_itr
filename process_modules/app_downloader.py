@@ -10,9 +10,7 @@ except Exception:
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
-import requests
 from tinydb import TinyDB, Query
-import machine
 class Apps():
     def __init__(self):
         self.db = TinyDB("db/installed_apps.json")
@@ -60,10 +58,14 @@ class Apps():
 
 class App_downloader:
     def __init__(self):
+        import machine
+
         self.apps = Apps()
         self.mac=''.join('{:02X}'.format(b) for b in machine.unique_id())
         self.app_name=""
     def check_status(self): #1. req 1
+        import requests
+
         check_status_url = "https://czxnvqwbwszzfgecpkbi.supabase.co/functions/v1/check-pending-apps?macAddress="+self.mac                    ###################### needs to be edited
         r=requests.get(check_status_url)
         res=r.json()
@@ -75,6 +77,7 @@ class App_downloader:
 
 
     def download_app(self): #2. req 2
+        import requests
         
         download_url = f"https://czxnvqwbwszzfgecpkbi.supabase.co/functions/v1/get-pending-apps?macAddress={self.mac}"              ##################### needs to be edited
         r = requests.get(str(download_url))
@@ -92,6 +95,8 @@ class App_downloader:
         return True
 
     def send_confirmation(self): #4. req 3
+        import requests
+
         confirmation_url = f"https://czxnvqwbwszzfgecpkbi.supabase.co/functions/v1/confirm-download?macAddress={self.mac}"                ################# needs to be edited 
         r = requests.get(str(confirmation_url))
         res=r.json()

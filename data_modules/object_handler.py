@@ -34,20 +34,55 @@ from process_modules.navbar import Nav
 
 from process_modules.app import App
 
-from process_modules.app_downloader import Apps
-
 # import esp32
 # import time
 import network
 # import espnow
-sta_if=network.WLAN(network.STA_IF)
-ap_if=network.WLAN(network.AP_IF)
-sta_if.active(True)
-ap_if.active(True)
-sta_if.config(hostname="CalSci")
-ap_if.config(ssid="CalSci")
-sta_if.active(False)
-ap_if.active(False)
+
+
+def _configure_wlan(iface, iface_type):
+    try:
+        if iface_type == network.STA_IF:
+            iface.config(hostname="CalSci")
+        elif iface_type == network.AP_IF:
+            iface.config(ssid="CalSci")
+    except Exception:
+        pass
+
+
+class LazyWLAN:
+    def __init__(self, iface_type):
+        self._iface_type = iface_type
+        self._iface = None
+
+    def _get(self):
+        if self._iface is None:
+            iface = network.WLAN(self._iface_type)
+            _configure_wlan(iface, self._iface_type)
+            self._iface = iface
+        return self._iface
+
+    def __getattr__(self, name):
+        return getattr(self._get(), name)
+
+
+class LazyAppsInstaller:
+    def __init__(self):
+        self._apps = None
+
+    def _get(self):
+        if self._apps is None:
+            from process_modules.app_downloader import Apps
+
+            self._apps = Apps()
+        return self._apps
+
+    def __getattr__(self, name):
+        return getattr(self._get(), name)
+
+
+sta_if = LazyWLAN(network.STA_IF)
+ap_if = LazyWLAN(network.AP_IF)
 # e = espnow.ESPNow()
 current_app=["home", ""]
 data_bucket={"ssid_g" : "", "connection_status_g" : False}
@@ -91,12 +126,12 @@ builtins.menu_refresh=menu_refresh
 builtins.form_refresh=form_refresh
 
 app=App()
-builtins.app=App()
+builtins.app=app
 
 mac_str = ''.join('{:02X}'.format(b) for b in machine.unique_id())
 builtins.mac_str=mac_str
 
-apps_installer=Apps()
+apps_installer=LazyAppsInstaller()
 builtins.apps_installer=apps_installer
 
 def keypad_state_manager(x):
