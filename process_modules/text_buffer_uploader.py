@@ -2,13 +2,17 @@ import st7565 as display
 
 try:
     import tools
+
     if hasattr(display, "graphics") and not hasattr(display.graphics, "pixels_changed"):
         display.graphics = tools.refresh(display.graphics, pixels_changed=200)
 except Exception:
     pass
 
+from process_modules.ui_context import set_active_view
+
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
+
 
 class Tbf:
     def __init__(self, disp_out, chrs, t_b, nav=None):
@@ -93,6 +97,8 @@ class Tbf:
         self.last_state = ""
 
     def refresh(self, state=None):
+        set_active_view("text")
+
         if state is None:
             state = self.nav.current_state() if self.nav is not None else ""
 
