@@ -37,6 +37,8 @@ _BATTERY_MIN_V = 3.5
 _BATTERY_MAX_V = 4.2
 _REFRESH_MS = 800
 _SLEEP_SLICE_MS = 120
+_CHARGE_SAMPLES = 3
+_CHARGE_SAMPLE_DELAY_MS = 8
 
 adc_pin = Pin(6)
 adc = ADC(adc_pin)
@@ -81,6 +83,19 @@ def _read_battery_voltage(samples=10):
     return round((2 * cell_voltage) + 0.220, 3)
 
 
+def _read_charge_state(samples=_CHARGE_SAMPLES, delay_ms=_CHARGE_SAMPLE_DELAY_MS):
+    sample_count = max(1, int(samples))
+    high_count = 0
+    for idx in range(sample_count):
+        try:
+            high_count += 1 if charge_pin.value() else 0
+        except Exception:
+            pass
+        if idx != sample_count - 1 and delay_ms > 0:
+            _sleep_ms(delay_ms)
+    return high_count * 2 >= sample_count
+
+
 def _battery_percent(voltage):
     span = _BATTERY_MAX_V - _BATTERY_MIN_V
     if span <= 0:
@@ -111,7 +126,7 @@ class _BatteryDashboard:
         self.running = False
         self.voltage = None
         self.percent = 0
-        self.charging = False
+        self.charging = _read_charge_state(samples=1, delay_ms=0)
         self._render_at_ms = 0
         self._render_lock = None
         if _thread is not None:
@@ -147,20 +162,26 @@ class _BatteryDashboard:
         self.running = False
         _sleep_ms(_SLEEP_SLICE_MS)
 
-    def _measure(self):
+    def _measure(self, charge_state=None):
         new_voltage = _read_battery_voltage()
         if self.voltage is None:
             self.voltage = new_voltage
         else:
             self.voltage = round((self.voltage * 3 + new_voltage) / 4, 3)
-        self.charging = bool(charge_pin.value())
+        if charge_state is None:
+            charge_state = _read_charge_state()
+        self.charging = bool(charge_state)
         self.percent = _battery_percent(self.voltage)
 
     def refresh(self, force=False):
         now_ms = _ticks_ms()
-        if (not force) and _ticks_diff(now_ms, self._render_at_ms) < _REFRESH_MS:
+        charge_state = _read_charge_state()
+        charge_changed = charge_state != self.charging
+        if (not force) and (not charge_changed) and _ticks_diff(now_ms, self._render_at_ms) < _REFRESH_MS:
             return
-        self._measure()
+        # Power-source changes should redraw immediately instead of waiting for the
+        # slower voltage refresh interval.
+        self._measure(charge_state=charge_state)
         self._render_at_ms = now_ms
         self.render()
 
@@ -229,7 +250,7 @@ class _BatteryDashboard:
         )
 
         percent_text = "{}%".format(self.percent)
-        self.canvas.draw_text_in_rect(percent_text, x, y + h + 3, w + terminal_w, 9, color=1, align="center")
+        self.canvas.draw_text_in_rect(percent_text, x, y + h + 2, w + terminal_w, 9, color=1, align="center")
 
     def _draw_info_panel(self):
         x = 79
