@@ -18,13 +18,16 @@ from math import *
 from apps.installed_apps._mono_ui import (
     CHAR_ADVANCE,
     CHAR_HEIGHT,
+    DISPLAY_HEIGHT,
     DISPLAY_WIDTH,
     MonoCanvas,
     clip_text_px,
 )
+from data_modules.characters import Characters
 from data_modules.db_instance import fun_db
 from data_modules.object_handler import (
     app,
+    data_bucket,
     display,
     keypad_state_manager,
     keypad_state_manager_reset,
@@ -35,16 +38,27 @@ from process_modules.ui_context import set_active_view
 
 
 _BASELINE = 6
-_PLACEHOLDER_W = 8
-_PLACEHOLDER_H = 8
+_PLACEHOLDER_SCALE_PAD = 2
 _FRACTION_PAD = 2
-_FRACTION_GAP = 1
-_EXP_RAISE = 4
-_ROOT_SYMBOL_W = 8
-_EXPR_HEIGHT = 46
-_DIVIDER_Y = 46
-_STATUS_Y = 48
-_MESSAGE_Y = 56
+_FRACTION_GAP = 2
+_MAIN_SCALE = 2
+_SUB_SCALE = 1
+_BORDER_PAD = 3
+_WORK_LEFT = 8
+_WORK_RIGHT_PAD = 8
+_MESSAGE_TOP = 6
+_MESSAGE_HEIGHT = 11
+_ROOT_MIN_GAP = 6
+_EDITOR_BUCKET_KEY = "_calculate_editor"
+_PENDING_BUCKET_KEY = "_calculate_pending_action"
+_AUTO_CALL_TOKENS = {
+    "sin": 1,
+    "cos": 1,
+    "tan": 1,
+    "asin": 1,
+    "acos": 1,
+    "atan": 1,
+}
 
 
 def build_function(func_def, safe_globals):
@@ -56,8 +70,8 @@ def build_function(func_def, safe_globals):
             raise ValueError("Wrong number of arguments")
 
         local_scope = {}
-        for i in range(len(vars_)):
-            local_scope[vars_[i]] = args[i]
+        for index, name in enumerate(vars_):
+            local_scope[name] = args[index]
 
         return eval(expr, safe_globals, local_scope)
 
@@ -132,7 +146,6 @@ def load_all_functions():
             "variables": variables,
             "expression": expression,
         }
-
         FUNCTIONS[name] = build_function(func_def, SAFE_GLOBALS)
         SAFE_GLOBALS[name] = FUNCTIONS[name]
 
@@ -142,9 +155,9 @@ class Slot:
         self.owner = owner
         self.name = name
         self.items = []
-        self.width = _PLACEHOLDER_W
-        self.height = _PLACEHOLDER_H
-        self.baseline = _BASELINE
+        self.width = 0
+        self.height = 0
+        self.baseline = 0
         self.x = 0
         self.y = 0
         self.positions = [0]
@@ -154,9 +167,9 @@ class TokenNode:
     def __init__(self, text):
         self.text = str(text)
         self.parent_slot = None
-        self.width = CHAR_ADVANCE
-        self.height = CHAR_HEIGHT
-        self.baseline = _BASELINE
+        self.width = 0
+        self.height = 0
+        self.baseline = 0
         self.x = 0
         self.y = 0
 
@@ -191,14 +204,42 @@ class PowerNode:
 class RootNode:
     def __init__(self):
         self.parent_slot = None
+        self.degree = Slot(self, "degree")
         self.radicand = Slot(self, "radicand")
         self.width = 0
         self.height = 0
         self.baseline = 0
         self.x = 0
         self.y = 0
-        self._content_x = _ROOT_SYMBOL_W
-        self._content_y = 2
+        self._degree_top = 0
+        self._degree_x = 0
+        self._stem_x = 0
+        self._stem_top = 0
+        self._diag_end_x = 0
+        self._bar_start_x = 0
+        self._content_x = 0
+        self._content_y = 0
+
+
+class LogNode:
+    def __init__(self):
+        self.parent_slot = None
+        self.base = Slot(self, "base")
+        self.argument = Slot(self, "argument")
+        self.width = 0
+        self.height = 0
+        self.baseline = 0
+        self.x = 0
+        self.y = 0
+        self._label_scale = _MAIN_SCALE
+        self._label_top = 0
+        self._label_width = 0
+        self._base_top = 0
+        self._base_x = 0
+        self._arg_top = 0
+        self._arg_x = 0
+        self._open_x = 0
+        self._close_x = 0
 
 
 def _insert_item(slot, index, item):
@@ -218,7 +259,11 @@ def _is_wordlike_token(text):
     if text == "":
         return False
     for char in text:
-        if not (char.isalnum() or char in "._"):
+        code = ord(char)
+        is_digit = 48 <= code <= 57
+        is_upper = 65 <= code <= 90
+        is_lower = 97 <= code <= 122
+        if not (is_digit or is_upper or is_lower or char in "._"):
             return False
     return True
 
@@ -237,11 +282,52 @@ class _MathEditor:
         self.cursor_slot = self.root
         self.cursor_index = 0
         self.scroll_x = 0
+        self.scroll_y = 0
         self.message = ""
 
     def _set_cursor(self, slot, index):
         self.cursor_slot = slot
         self.cursor_index = max(0, min(int(index), len(slot.items)))
+
+    def _slot_scale(self, slot):
+        owner = getattr(slot, "owner", None)
+        if owner is None:
+            return _MAIN_SCALE
+        if isinstance(owner, FractionNode):
+            return self._slot_scale(owner.parent_slot)
+        if isinstance(owner, PowerNode):
+            return self._slot_scale(owner.parent_slot)
+        if isinstance(owner, LogNode):
+            return self._slot_scale(owner.parent_slot)
+        if isinstance(owner, RootNode):
+            return self._slot_scale(owner.parent_slot)
+        return self._slot_scale(owner.parent_slot)
+
+    def _text_spacing(self, scale):
+        return 1 if int(scale) <= 1 else 2
+
+    def _text_height(self, scale):
+        return CHAR_HEIGHT * int(scale)
+
+    def _text_baseline(self, scale):
+        scale = int(scale)
+        return (_BASELINE + 1) * scale - 1
+
+    def _text_width(self, text, scale):
+        text = str(text or "")
+        scale = int(scale)
+        if text == "":
+            return 0
+        advance = (CHAR_ADVANCE - 1) * scale + self._text_spacing(scale)
+        return (len(text) * advance) - self._text_spacing(scale)
+
+    def _placeholder_width(self, scale):
+        scale = int(scale)
+        return max(8, self._text_width(" ", scale) + _PLACEHOLDER_SCALE_PAD)
+
+    def _placeholder_height(self, scale):
+        scale = int(scale)
+        return max(7, self._text_height(scale) - max(1, scale))
 
     def _take_previous_atom(self, slot, index):
         index = max(0, min(int(index), len(slot.items)))
@@ -287,12 +373,25 @@ class _MathEditor:
                     start -= 1
                     continue
                 break
+        elif isinstance(last, TokenNode):
+            return []
 
         extracted = items[start:index]
         del items[start:index]
         for item in extracted:
             item.parent_slot = None
         return extracted
+
+    def _needs_implicit_multiplication(self, slot=None, index=None):
+        slot = self.cursor_slot if slot is None else slot
+        index = self.cursor_index if index is None else int(index)
+        if index <= 0 or index > len(slot.items):
+            return False
+
+        previous = slot.items[index - 1]
+        if isinstance(previous, TokenNode):
+            return previous.text not in ("+", "-", "*", "/", "(", ",")
+        return True
 
     def _collect_positions(self, slot, positions):
         positions.append((slot, 0))
@@ -309,11 +408,18 @@ class _MathEditor:
             self._collect_positions(node.base, positions)
             self._collect_positions(node.exponent, positions)
         elif isinstance(node, RootNode):
+            self._collect_positions(node.degree, positions)
             self._collect_positions(node.radicand, positions)
+        elif isinstance(node, LogNode):
+            self._collect_positions(node.base, positions)
+            self._collect_positions(node.argument, positions)
 
     def _move_linear(self, step):
         positions = []
         self._collect_positions(self.root, positions)
+        if not positions:
+            self._set_cursor(self.root, 0)
+            return
 
         current = 0
         found = False
@@ -327,12 +433,7 @@ class _MathEditor:
             self._set_cursor(self.root, 0)
             return
 
-        target = current + int(step)
-        if target < 0:
-            target = 0
-        if target >= len(positions):
-            target = len(positions) - 1
-
+        target = (current + int(step)) % len(positions)
         self._set_cursor(positions[target][0], positions[target][1])
 
     def _move_vertical(self, direction):
@@ -350,6 +451,16 @@ class _MathEditor:
                 target = owner.exponent
             elif direction < 0 and slot is owner.exponent:
                 target = owner.base
+        elif isinstance(owner, LogNode):
+            if direction > 0 and slot is owner.base:
+                target = owner.argument
+            elif direction < 0 and slot is owner.argument:
+                target = owner.base
+        elif isinstance(owner, RootNode):
+            if direction > 0 and slot is owner.degree:
+                target = owner.radicand
+            elif direction < 0 and slot is owner.radicand:
+                target = owner.degree
 
         if target is None:
             return
@@ -357,12 +468,22 @@ class _MathEditor:
         source_len = len(slot.items)
         target_len = len(target.items)
         if source_len <= 0:
-            target_index = 0
+            target_index = target_len
         else:
             ratio = self.cursor_index / float(source_len)
             target_index = int(round(ratio * target_len))
 
         self._set_cursor(target, target_index)
+
+    def _insert_sequence(self, items, cursor_index=None):
+        slot = self.cursor_slot
+        insert_at = self.cursor_index
+        for offset, item in enumerate(items):
+            _insert_item(slot, insert_at + offset, item)
+        if cursor_index is None:
+            cursor_index = insert_at + len(items)
+        self._set_cursor(slot, cursor_index)
+        self.message = ""
 
     def _insert_token(self, token):
         token = str(token or "")
@@ -370,10 +491,29 @@ class _MathEditor:
             return
         if token == "tab":
             token = " "
+        self._insert_sequence([TokenNode(token)])
 
-        _insert_item(self.cursor_slot, self.cursor_index, TokenNode(token))
-        self._set_cursor(self.cursor_slot, self.cursor_index + 1)
-        self.message = ""
+    def _insert_function_call(self, func_name, arg_count=1):
+        func_name = str(func_name or "").strip()
+        arg_count = max(0, int(arg_count))
+        if func_name == "":
+            return
+
+        items = []
+        if self._needs_implicit_multiplication():
+            items.append(TokenNode("*"))
+
+        items.extend([TokenNode(func_name), TokenNode("(")])
+        if arg_count <= 0:
+            items.append(TokenNode(")"))
+        else:
+            for _ in range(arg_count - 1):
+                items.append(TokenNode(","))
+            items.append(TokenNode(")"))
+        cursor_offset = 2
+        if items and isinstance(items[0], TokenNode) and items[0].text == "*":
+            cursor_offset += 1
+        self._insert_sequence(items, cursor_index=self.cursor_index + cursor_offset)
 
     def _insert_fraction(self):
         slot = self.cursor_slot
@@ -414,9 +554,26 @@ class _MathEditor:
     def _insert_root(self):
         slot = self.cursor_slot
         index = self.cursor_index
+        if self._needs_implicit_multiplication(slot, index):
+            _insert_item(slot, index, TokenNode("*"))
+            index += 1
+            self.cursor_index += 1
         node = RootNode()
         _insert_item(slot, index, node)
         self._set_cursor(node.radicand, 0)
+        self.message = ""
+
+    def _insert_log(self):
+        slot = self.cursor_slot
+        index = self.cursor_index
+        if self._needs_implicit_multiplication(slot, index):
+            _insert_item(slot, index, TokenNode("*"))
+            index += 1
+            self.cursor_index += 1
+        node = LogNode()
+        _insert_item(slot, index, node)
+        _extend_slot(node.base, [TokenNode("10")])
+        self._set_cursor(node.argument, 0)
         self.message = ""
 
     def _insert_pow10(self):
@@ -450,6 +607,12 @@ class _MathEditor:
             if isinstance(owner, PowerNode) and slot is owner.exponent:
                 self._set_cursor(owner.base, len(owner.base.items))
                 return
+            if isinstance(owner, LogNode) and slot is owner.argument:
+                self._set_cursor(owner.base, len(owner.base.items))
+                return
+            if isinstance(owner, RootNode) and slot is owner.radicand:
+                self._set_cursor(owner.degree, len(owner.degree.items))
+                return
 
             parent_slot = owner.parent_slot
             if parent_slot is not None:
@@ -470,6 +633,7 @@ class _MathEditor:
         self.root.items[:] = []
         self._set_cursor(self.root, 0)
         self.scroll_x = 0
+        self.scroll_y = 0
         self.message = ""
 
     def _slot_to_expression(self, slot):
@@ -510,10 +674,24 @@ class _MathEditor:
             return "(({})**({}))".format(base, exponent), True
 
         if isinstance(item, RootNode):
+            degree, ok_d = self._slot_to_expression(item.degree)
             radicand, ok_r = self._slot_to_expression(item.radicand)
             if not ok_r:
                 return "", False
+            if ok_d and degree.strip() != "":
+                return "(({})**(1/({})))".format(radicand, degree), True
             return "(sqrt({}))".format(radicand), True
+
+        if isinstance(item, LogNode):
+            argument, ok_arg = self._slot_to_expression(item.argument)
+            if not ok_arg:
+                return "", False
+            if item.base.items:
+                base, ok_base = self._slot_to_expression(item.base)
+                if not ok_base:
+                    return "", False
+                return "(log(({}),({})))".format(argument, base), True
+            return "(log10({}))".format(argument), True
 
         return "", False
 
@@ -532,10 +710,11 @@ class _MathEditor:
             self.message = "ERR: {}".format(exc)
 
     def _measure_slot(self, slot):
+        scale = self._slot_scale(slot)
         if not slot.items:
-            slot.width = _PLACEHOLDER_W
-            slot.height = _PLACEHOLDER_H
-            slot.baseline = _BASELINE
+            slot.width = self._placeholder_width(scale)
+            slot.height = self._placeholder_height(scale)
+            slot.baseline = self._text_baseline(scale)
             return
 
         max_baseline = 0
@@ -553,26 +732,28 @@ class _MathEditor:
                 height = item_bottom
 
         slot.width = width
-        slot.height = height
-        slot.baseline = max_baseline
+        slot.height = max(height, self._placeholder_height(scale))
+        slot.baseline = max(max_baseline, self._text_baseline(scale))
 
     def _measure_item(self, item):
         if isinstance(item, TokenNode):
-            item.width = max(CHAR_ADVANCE, len(item.text) * CHAR_ADVANCE)
-            item.height = CHAR_HEIGHT
-            item.baseline = _BASELINE
+            scale = self._slot_scale(item.parent_slot)
+            item.width = max(self._placeholder_width(scale), self._text_width(item.text, scale))
+            item.height = self._text_height(scale)
+            item.baseline = self._text_baseline(scale)
             return
 
         if isinstance(item, FractionNode):
             self._measure_slot(item.numerator)
             self._measure_slot(item.denominator)
             inner_w = max(item.numerator.width, item.denominator.width)
+            line_thickness = 2
             item.width = inner_w + (_FRACTION_PAD * 2)
             item.baseline = item.numerator.height + _FRACTION_GAP
             item.height = (
                 item.numerator.height
                 + (_FRACTION_GAP * 2)
-                + 1
+                + line_thickness
                 + item.denominator.height
             )
             return
@@ -580,14 +761,15 @@ class _MathEditor:
         if isinstance(item, PowerNode):
             self._measure_slot(item.base)
             self._measure_slot(item.exponent)
-
-            exp_top = item.base.baseline - _EXP_RAISE - item.exponent.baseline
+            base_scale = self._slot_scale(item.base)
+            raise_px = max(4, base_scale * 4)
+            exp_top = item.base.baseline - raise_px - item.exponent.baseline
             top_shift = -exp_top if exp_top < 0 else 0
 
             item._base_top = top_shift
             item._exp_top = exp_top + top_shift
-            item._exp_x = item.base.width
-            item.width = item.base.width + item.exponent.width
+            item._exp_x = item.base.width + max(1, base_scale - 1)
+            item.width = item._exp_x + item.exponent.width
             item.baseline = item._base_top + item.base.baseline
             item.height = max(
                 item._base_top + item.base.height,
@@ -596,12 +778,52 @@ class _MathEditor:
             return
 
         if isinstance(item, RootNode):
+            self._measure_slot(item.degree)
             self._measure_slot(item.radicand)
-            item._content_x = _ROOT_SYMBOL_W
-            item._content_y = 2
-            item.width = item._content_x + item.radicand.width
+            scale = self._slot_scale(item.radicand)
+            item._degree_x = 0
+            item._degree_top = 0
+            item._stem_x = item.degree.width + 1
+            item._content_x = item._stem_x + max(5, scale * 3)
+            item._bar_start_x = item._content_x - 2
+            item._diag_end_x = item._bar_start_x
+            item._content_y = item.degree.height + max(1, scale // 2)
+            item._stem_top = max(1, item._content_y - max(4, scale * 2))
+            item.width = item._content_x + max(
+                item.radicand.width,
+                self._placeholder_width(scale) + _ROOT_MIN_GAP,
+            )
             item.baseline = item._content_y + item.radicand.baseline
-            item.height = item._content_y + item.radicand.height
+            item.height = max(
+                item.degree.height,
+                item._content_y + item.radicand.height + max(0, scale - 1),
+            )
+            return
+
+        if isinstance(item, LogNode):
+            self._measure_slot(item.base)
+            self._measure_slot(item.argument)
+            parent_scale = self._slot_scale(item.parent_slot)
+            item._label_scale = max(_SUB_SCALE, parent_scale)
+            item._label_width = self._text_width("log", item._label_scale)
+            label_height = self._text_height(item._label_scale)
+            label_baseline = self._text_baseline(item._label_scale)
+            paren_width = self._text_width("(", item._label_scale)
+
+            item.baseline = max(label_baseline, item.argument.baseline)
+            item._label_top = item.baseline - label_baseline
+            item._arg_top = item.baseline - item.argument.baseline
+            item._base_top = item._label_top + label_baseline + 1
+            item._base_x = max(0, item._label_width - self._text_spacing(item._label_scale))
+            item._open_x = item._label_width + item.base.width + 2
+            item._arg_x = item._open_x + paren_width
+            item._close_x = item._arg_x + item.argument.width
+            item.width = item._close_x + paren_width
+            item.height = max(
+                item._label_top + label_height,
+                item._arg_top + item.argument.height,
+                item._base_top + item.base.height,
+            )
 
     def _layout_slot(self, slot, x, y, baseline):
         slot.x = int(x)
@@ -626,14 +848,10 @@ class _MathEditor:
 
         if isinstance(item, FractionNode):
             inner_w = item.width - (_FRACTION_PAD * 2)
-            num_x = item.x + _FRACTION_PAD + max(
-                0, (inner_w - item.numerator.width) // 2
-            )
-            den_x = item.x + _FRACTION_PAD + max(
-                0, (inner_w - item.denominator.width) // 2
-            )
+            num_x = item.x + _FRACTION_PAD + max(0, (inner_w - item.numerator.width) // 2)
+            den_x = item.x + _FRACTION_PAD + max(0, (inner_w - item.denominator.width) // 2)
             self._layout_slot(item.numerator, num_x, item.y, item.numerator.baseline)
-            den_y = item.y + item.baseline + _FRACTION_GAP + 1
+            den_y = item.y + item.baseline + _FRACTION_GAP + 2
             self._layout_slot(
                 item.denominator,
                 den_x,
@@ -659,21 +877,42 @@ class _MathEditor:
 
         if isinstance(item, RootNode):
             self._layout_slot(
+                item.degree,
+                item.x + item._degree_x,
+                item.y + item._degree_top,
+                item.degree.baseline,
+            )
+            self._layout_slot(
                 item.radicand,
                 item.x + item._content_x,
                 item.y + item._content_y,
                 item.radicand.baseline,
             )
+            return
+
+        if isinstance(item, LogNode):
+            self._layout_slot(
+                item.base,
+                item.x + item._base_x,
+                item.y + item._base_top,
+                item.base.baseline,
+            )
+            self._layout_slot(
+                item.argument,
+                item.x + item._arg_x,
+                item.y + item._arg_top,
+                item.argument.baseline,
+            )
 
     def _pixel(self, x, y):
-        if 0 <= int(x) < DISPLAY_WIDTH and 0 <= int(y) < 64:
+        if 0 <= int(x) < DISPLAY_WIDTH and 0 <= int(y) < DISPLAY_HEIGHT:
             self.canvas.pixel(int(x), int(y), 1)
 
     def _hline(self, x, y, width):
         x = int(x)
         y = int(y)
         width = int(width)
-        if width <= 0 or y < 0 or y >= 64:
+        if width <= 0 or y < 0 or y >= DISPLAY_HEIGHT:
             return
         start = max(0, x)
         end = min(DISPLAY_WIDTH, x + width)
@@ -687,9 +926,17 @@ class _MathEditor:
         if height <= 0 or x < 0 or x >= DISPLAY_WIDTH:
             return
         start = max(0, y)
-        end = min(64, y + height)
+        end = min(DISPLAY_HEIGHT, y + height)
         if end > start:
             self.canvas.vline(x, start, end - start, 1)
+
+    def _hline_thick(self, x, y, width, thickness=2):
+        for offset in range(max(1, int(thickness))):
+            self._hline(x, int(y) + offset, width)
+
+    def _vline_thick(self, x, y, height, thickness=2):
+        for offset in range(max(1, int(thickness))):
+            self._vline(int(x) + offset, y, height)
 
     def _line(self, x0, y0, x1, y1):
         x0 = int(x0)
@@ -715,58 +962,142 @@ class _MathEditor:
                 err += dx
                 y0 += sy
 
+    def _line_thick(self, x0, y0, x1, y1, thickness=2):
+        for offset in range(max(1, int(thickness))):
+            self._line(x0, int(y0) + offset, x1, int(y1) + offset)
+
     def _rect(self, x, y, width, height):
         width = int(width)
         height = int(height)
         if width <= 0 or height <= 0:
             return
-        self._hline(x, y, width)
-        self._hline(x, y + height - 1, width)
-        self._vline(x, y, height)
-        self._vline(x + width - 1, y, height)
+        self.canvas.rect(int(x), int(y), width, height, 1)
 
-    def _draw_placeholder(self, slot, scroll_x):
-        box_x = slot.x - scroll_x
-        box_y = slot.y + max(0, slot.baseline - 5)
-        box_w = max(5, slot.width - 1)
-        self._rect(box_x, box_y, box_w, 6)
-
-    def _render_slot(self, slot, scroll_x):
-        if not slot.items:
-            self._draw_placeholder(slot, scroll_x)
+    def _fill_rect(self, x, y, width, height):
+        width = int(width)
+        height = int(height)
+        if width <= 0 or height <= 0:
             return
+        self.canvas.fill_rect(int(x), int(y), width, height, 1)
 
+    def _draw_scaled_text(self, text, x, y, scale=1, color=1, bold=False):
+        text = str(text or "")
+        scale = max(1, int(scale))
+        spacing = self._text_spacing(scale)
+        cursor_x = int(x)
+        y = int(y)
+        color = 1 if color else 0
+        stroke = 1 if bold or scale > 1 else 0
+
+        for char in text:
+            glyph = Characters.Chr2bytes(Characters, char)
+            for col_idx, col_bits in enumerate(glyph):
+                px = cursor_x + (col_idx * scale)
+                for bit_idx in range(CHAR_HEIGHT):
+                    if not (col_bits & (1 << bit_idx)):
+                        continue
+                    py = y + (bit_idx * scale)
+                    self.canvas.fill_rect(px, py, scale + stroke, scale, color)
+            cursor_x += ((CHAR_ADVANCE - 1) * scale) + spacing
+
+    def _draw_placeholder(self, slot, scroll_x, scroll_y):
+        scale = self._slot_scale(slot)
+        box_x = slot.x - scroll_x
+        box_y = (
+            slot.y
+            + max(1, slot.baseline - self._placeholder_height(scale) + 1)
+            - scroll_y
+        )
+        box_w = max(6, slot.width - 1)
+        box_h = max(5, self._placeholder_height(scale) - 1)
+        self._rect(box_x, box_y, box_w, box_h)
+        self._hline(box_x + 1, box_y + box_h - 1, max(1, box_w - 2))
+
+    def _render_slot(self, slot, scroll_x, scroll_y):
+        if not slot.items:
+            self._draw_placeholder(slot, scroll_x, scroll_y)
+            return
         for item in slot.items:
-            self._render_item(item, scroll_x)
+            self._render_item(item, scroll_x, scroll_y)
 
-    def _render_item(self, item, scroll_x):
+    def _render_item(self, item, scroll_x, scroll_y):
         if isinstance(item, TokenNode):
-            self.canvas.draw_text(item.text, item.x - scroll_x, item.y, color=1)
+            scale = self._slot_scale(item.parent_slot)
+            self._draw_scaled_text(
+                item.text,
+                item.x - scroll_x,
+                item.y - scroll_y,
+                scale=scale,
+                color=1,
+                bold=scale > 1,
+            )
             return
 
         if isinstance(item, FractionNode):
-            self._render_slot(item.numerator, scroll_x)
-            self._render_slot(item.denominator, scroll_x)
-            self._hline(
+            self._render_slot(item.numerator, scroll_x, scroll_y)
+            self._render_slot(item.denominator, scroll_x, scroll_y)
+            self._hline_thick(
                 item.x + _FRACTION_PAD - scroll_x,
-                item.y + item.baseline,
+                item.y + item.baseline - scroll_y,
                 item.width - (_FRACTION_PAD * 2),
+                thickness=2,
             )
             return
 
         if isinstance(item, PowerNode):
-            self._render_slot(item.base, scroll_x)
-            self._render_slot(item.exponent, scroll_x)
+            self._render_slot(item.base, scroll_x, scroll_y)
+            self._render_slot(item.exponent, scroll_x, scroll_y)
             return
 
         if isinstance(item, RootNode):
-            self._render_slot(item.radicand, scroll_x)
-            root_x = item.x - scroll_x
-            bar_y = item.radicand.y - 1
-            bottom_y = item.radicand.y + item.radicand.height - 1
-            self._line(root_x, bottom_y - 2, root_x + 2, bottom_y)
-            self._line(root_x + 2, bottom_y, root_x + 4, bar_y)
-            self._hline(root_x + 4, bar_y, item.width - 4)
+            self._render_slot(item.degree, scroll_x, scroll_y)
+            self._render_slot(item.radicand, scroll_x, scroll_y)
+            stem_x = item.x + item._stem_x - scroll_x
+            stem_top = item.y + item._stem_top - scroll_y
+            diag_end_x = item.x + item._diag_end_x - scroll_x
+            bar_y = (
+                item.radicand.y
+                - max(1, self._slot_scale(item.radicand) // 2)
+                - scroll_y
+            )
+            bottom_y = item.radicand.y + item.radicand.height - 1 - scroll_y
+            self._vline_thick(stem_x, stem_top, bottom_y - stem_top + 1, thickness=2)
+            self._line_thick(stem_x, stem_top, diag_end_x, bar_y, thickness=2)
+            self._hline_thick(
+                item.x + item._bar_start_x - scroll_x,
+                bar_y,
+                item.width - item._bar_start_x,
+                thickness=2,
+            )
+            return
+
+        if isinstance(item, LogNode):
+            self._draw_scaled_text(
+                "log",
+                item.x - scroll_x,
+                item.y + item._label_top - scroll_y,
+                scale=item._label_scale,
+                color=1,
+                bold=item._label_scale > 1,
+            )
+            self._render_slot(item.base, scroll_x, scroll_y)
+            self._render_slot(item.argument, scroll_x, scroll_y)
+            self._draw_scaled_text(
+                "(",
+                item.x + item._open_x - scroll_x,
+                item.y + item._arg_top - scroll_y,
+                scale=item._label_scale,
+                color=1,
+                bold=item._label_scale > 1,
+            )
+            self._draw_scaled_text(
+                ")",
+                item.x + item._close_x - scroll_x,
+                item.y + item._arg_top - scroll_y,
+                scale=item._label_scale,
+                color=1,
+                bold=item._label_scale > 1,
+            )
 
     def _cursor_geometry(self):
         slot = self.cursor_slot
@@ -782,78 +1113,140 @@ class _MathEditor:
             top = slot.y
             height = max(7, slot.height)
         else:
-            top = slot.y + max(0, slot.baseline - 6)
-            height = 7
+            top = slot.y + max(1, slot.baseline - self._placeholder_height(self._slot_scale(slot)) + 1)
+            height = max(7, self._placeholder_height(self._slot_scale(slot)))
 
         return x, top, height
 
-    def _status_text(self):
-        state = str(nav.current_state() or "").strip()
-        if state != "":
-            return state
+    def _draw_cursor(self, cursor_x, cursor_y, cursor_h):
+        thickness = 1 if self._slot_scale(self.cursor_slot) <= 1 else 2
+        for offset in range(thickness):
+            self._vline(cursor_x + offset, cursor_y, cursor_h)
+        self._pixel(cursor_x - 1, cursor_y)
+        self._pixel(cursor_x + thickness, cursor_y + cursor_h - 1)
 
-        slot = self.cursor_slot
-        owner = slot.owner
-        if owner is None:
-            return "expression"
-        if isinstance(owner, FractionNode):
-            if slot is owner.numerator:
-                return "numerator"
-            return "denominator"
-        if isinstance(owner, PowerNode):
-            if slot is owner.base:
-                return "power base"
-            return "exponent"
-        if isinstance(owner, RootNode):
-            return "square root"
-        return "expression"
+    def _draw_scrollbars(
+        self,
+        content_top,
+        content_bottom,
+        view_left,
+        view_right,
+        max_scroll_x,
+        max_scroll_y,
+    ):
+        visible_width = max(1, view_right - view_left + 1)
+        visible_height = max(1, content_bottom - content_top + 1)
+
+        if max_scroll_x <= 0:
+            h_thumb_x = None
+            h_thumb_w = 0
+        else:
+            h_track_x = 0
+            h_track_y = DISPLAY_HEIGHT - 1
+            h_track_w = DISPLAY_WIDTH
+            content_width = visible_width + max_scroll_x
+            h_thumb_w = max(8, (h_track_w * visible_width) // max(1, content_width))
+            h_thumb_w = min(h_track_w, h_thumb_w)
+            h_thumb_range = max(0, h_track_w - h_thumb_w)
+            h_thumb_x = h_track_x + (
+                self.scroll_x * h_thumb_range // max(1, max_scroll_x)
+            )
+            self._fill_rect(h_thumb_x, h_track_y, h_thumb_w, 1)
+
+        if max_scroll_y <= 0:
+            v_thumb_y = None
+            v_thumb_h = 0
+        else:
+            v_track_x = DISPLAY_WIDTH - 1
+            v_track_y = 0
+            v_track_h = max(1, content_bottom + 1)
+            content_height = visible_height + max_scroll_y
+            v_thumb_h = max(8, (v_track_h * visible_height) // max(1, content_height))
+            v_thumb_h = min(v_track_h, v_thumb_h)
+            v_thumb_range = max(0, v_track_h - v_thumb_h)
+            v_thumb_y = v_track_y + (
+                self.scroll_y * v_thumb_range // max(1, max_scroll_y)
+            )
+            self._fill_rect(v_track_x, v_thumb_y, 1, v_thumb_h)
+
+    def _draw_bottom_answer(self):
+        if not self.message:
+            return
+        self.canvas.draw_text(
+            clip_text_px(self.message, DISPLAY_WIDTH - 2),
+            1,
+            DISPLAY_HEIGHT - CHAR_HEIGHT - 1,
+            color=1,
+        )
+
+    def _nav_overlay(self):
+        state = str(nav.current_state() or "")
+        show_overlay = state != "" and nav.is_visible()
+        nav.set_restore_callback(self.render if show_overlay else None)
+        if show_overlay:
+            nav.draw_state(state)
 
     def render(self):
         set_active_view("text")
         self.canvas.clear()
 
         self._measure_slot(self.root)
-        top = max(1, (_EXPR_HEIGHT - self.root.height) // 2)
-        self._layout_slot(self.root, 4, top, self.root.baseline)
+        content_top = 1
+        content_bottom = DISPLAY_HEIGHT - CHAR_HEIGHT - 6
+        content_height = max(1, content_bottom - content_top + 1)
+        top = content_top + max(0, (content_height - self.root.height) // 2)
+        self._layout_slot(self.root, _WORK_LEFT, top, self.root.baseline)
 
         cursor_x, cursor_y, cursor_h = self._cursor_geometry()
-        max_scroll = max(0, (self.root.x + self.root.width) - (DISPLAY_WIDTH - 3))
-        scroll_x = min(max(0, self.scroll_x), max_scroll)
+        view_left = _WORK_LEFT
+        view_right = DISPLAY_WIDTH - _WORK_RIGHT_PAD
+        max_scroll_x = max(0, (self.root.x + self.root.width) - view_right)
+        max_scroll_y = max(0, (self.root.y + self.root.height) - content_bottom)
+        scroll_x = min(max(0, self.scroll_x), max_scroll_x)
+        scroll_y = min(max(0, self.scroll_y), max_scroll_y)
 
-        view_left = 4
-        view_right = DISPLAY_WIDTH - 5
         cursor_view_x = cursor_x - scroll_x
         if cursor_view_x < view_left:
             scroll_x = max(0, cursor_x - view_left)
         elif cursor_view_x > view_right:
-            scroll_x = min(max_scroll, cursor_x - view_right)
+            scroll_x = min(max_scroll_x, cursor_x - view_right)
 
-        self.scroll_x = min(max(0, scroll_x), max_scroll)
+        cursor_view_y = cursor_y - scroll_y
+        if cursor_view_y < content_top:
+            scroll_y = max(0, cursor_y - content_top)
+        elif cursor_view_y + cursor_h > content_bottom:
+            scroll_y = min(max_scroll_y, cursor_y + cursor_h - content_bottom)
 
-        self._render_slot(self.root, self.scroll_x)
+        self.scroll_x = min(max(0, scroll_x), max_scroll_x)
+        self.scroll_y = min(max(0, scroll_y), max_scroll_y)
+        self._render_slot(self.root, self.scroll_x, self.scroll_y)
 
         cursor_view_x = cursor_x - self.scroll_x
-        self._vline(cursor_view_x, cursor_y, cursor_h)
-        self._pixel(cursor_view_x - 1, cursor_y)
-        self._pixel(cursor_view_x + 1, cursor_y + cursor_h - 1)
-
-        self._hline(0, _DIVIDER_Y, DISPLAY_WIDTH)
-        self.canvas.draw_text(
-            clip_text_px(self._status_text(), DISPLAY_WIDTH - 2),
-            1,
-            _STATUS_Y,
-            color=1,
+        cursor_view_y = cursor_y - self.scroll_y
+        self._draw_cursor(cursor_view_x, cursor_view_y, cursor_h)
+        self._draw_scrollbars(
+            content_top,
+            content_bottom,
+            view_left,
+            view_right,
+            max_scroll_x,
+            max_scroll_y,
         )
-        self.canvas.draw_text(
-            clip_text_px(
-                self.message if self.message else "OK=EVAL U/D=SLOT",
-                DISPLAY_WIDTH - 2,
-            ),
-            1,
-            _MESSAGE_Y,
-            color=1,
-        )
+        self._draw_bottom_answer()
         self.canvas.flush()
+        self._nav_overlay()
+
+    def apply_pending_action(self, action):
+        if not isinstance(action, dict):
+            return
+        action_type = str(action.get("type") or "")
+        if action_type == "insert_function":
+            self._insert_function_call(
+                action.get("name", ""),
+                action.get("arg_count", 0),
+            )
+        elif action_type == "insert_text":
+            self._insert_token(action.get("text", ""))
 
     def handle_key(self, token):
         token = str(token or "")
@@ -879,8 +1272,12 @@ class _MathEditor:
             self._insert_power()
         elif token == "root":
             self._insert_root()
+        elif token == "log":
+            self._insert_log()
         elif token == "*pow(10, )":
             self._insert_pow10()
+        elif token in _AUTO_CALL_TOKENS:
+            self._insert_function_call(token, _AUTO_CALL_TOKENS[token])
         elif token == "copy":
             self.message = "COPY N/A"
         elif token == "paste":
@@ -891,13 +1288,27 @@ class _MathEditor:
         self.render()
 
 
+def _load_editor():
+    editor = data_bucket.get(_EDITOR_BUCKET_KEY)
+    if getattr(editor, "root", None) is None or not hasattr(editor, "render"):
+        editor = _MathEditor()
+        data_bucket[_EDITOR_BUCKET_KEY] = editor
+    if not hasattr(editor, "scroll_y"):
+        editor.scroll_y = 0
+    return editor
+
+
 def calculate():
     load_all_functions()
     keypad_state_manager_reset()
     set_active_view("text")
     display.clear_display()
 
-    editor = _MathEditor()
+    editor = _load_editor()
+    pending_action = data_bucket.pop(_PENDING_BUCKET_KEY, None)
+    if pending_action:
+        editor.apply_pending_action(pending_action)
+
     editor.render()
 
     while True:
@@ -922,6 +1333,7 @@ def calculate():
             continue
 
         if token == "toolbox":
+            data_bucket[_EDITOR_BUCKET_KEY] = editor
             app.set_app_name("toolbox")
             app.set_group_name("root")
             break
