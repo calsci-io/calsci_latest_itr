@@ -213,10 +213,12 @@ class RootNode:
         self.y = 0
         self._degree_top = 0
         self._degree_x = 0
-        self._stem_x = 0
-        self._stem_top = 0
-        self._diag_end_x = 0
+        self._hook_start_x = 0
+        self._hook_start_y = 0
+        self._vertex_x = 0
+        self._vertex_y = 0
         self._bar_start_x = 0
+        self._bar_y = 0
         self._content_x = 0
         self._content_y = 0
 
@@ -560,6 +562,7 @@ class _MathEditor:
             self.cursor_index += 1
         node = RootNode()
         _insert_item(slot, index, node)
+        _extend_slot(node.degree, [TokenNode("2")])
         self._set_cursor(node.radicand, 0)
         self.message = ""
 
@@ -786,14 +789,29 @@ class _MathEditor:
             self._measure_slot(item.degree)
             self._measure_slot(item.radicand)
             scale = self._slot_scale(item.radicand)
+            bar_thickness = 2
+            bar_gap = 2
+            hook_dx = max(4, scale * 2)
+            hook_dy = max(5, scale * 3)
+            rise_dx = max(8, scale * 4)
+            content_pad = max(2, scale)
             item._degree_x = 0
             item._degree_top = 0
-            item._stem_x = item.degree.width + 1
-            item._content_x = item._stem_x + max(5, scale * 3)
-            item._bar_start_x = item._content_x - 2
-            item._diag_end_x = item._bar_start_x
-            item._content_y = item.degree.height + max(1, scale // 2)
-            item._stem_top = max(1, item._content_y - max(4, scale * 2))
+            item._hook_start_x = item.degree.width + max(1, scale - 1)
+            item._content_y = max(
+                bar_thickness + bar_gap + 1,
+                item.degree.height - max(4, scale * 3),
+            )
+            item._bar_y = item._content_y - bar_gap - bar_thickness
+            item._vertex_x = item._hook_start_x + hook_dx
+            item._vertex_y = item._content_y + item.radicand.height - 1
+            item._hook_start_y = max(
+                item._bar_y + bar_thickness + 1,
+                item._vertex_y - hook_dy,
+            )
+            rise_dx = max(rise_dx, (item._vertex_y - item._bar_y) // 2)
+            item._bar_start_x = item._vertex_x + rise_dx
+            item._content_x = item._bar_start_x + content_pad
             item.width = item._content_x + max(
                 item.radicand.width,
                 self._placeholder_width(scale) + _ROOT_MIN_GAP,
@@ -801,7 +819,7 @@ class _MathEditor:
             item.baseline = item._content_y + item.radicand.baseline
             item.height = max(
                 item.degree.height,
-                item._content_y + item.radicand.height + max(0, scale - 1),
+                item._vertex_y + 1,
             )
             return
 
@@ -1057,17 +1075,25 @@ class _MathEditor:
         if isinstance(item, RootNode):
             self._render_slot(item.degree, scroll_x, scroll_y)
             self._render_slot(item.radicand, scroll_x, scroll_y)
-            stem_x = item.x + item._stem_x - scroll_x
-            stem_top = item.y + item._stem_top - scroll_y
-            diag_end_x = item.x + item._diag_end_x - scroll_x
-            bar_y = (
-                item.radicand.y
-                - max(1, self._slot_scale(item.radicand) // 2)
-                - scroll_y
+            hook_start_x = item.x + item._hook_start_x - scroll_x
+            hook_start_y = item.y + item._hook_start_y - scroll_y
+            vertex_x = item.x + item._vertex_x - scroll_x
+            vertex_y = item.y + item._vertex_y - scroll_y
+            bar_y = item.y + item._bar_y - scroll_y
+            self._line_thick(
+                hook_start_x,
+                hook_start_y,
+                vertex_x,
+                vertex_y,
+                thickness=2,
             )
-            bottom_y = item.radicand.y + item.radicand.height - 1 - scroll_y
-            self._vline_thick(stem_x, stem_top, bottom_y - stem_top + 1, thickness=2)
-            self._line_thick(stem_x, stem_top, diag_end_x, bar_y, thickness=2)
+            self._line_thick(
+                vertex_x,
+                vertex_y,
+                item.x + item._bar_start_x - scroll_x,
+                bar_y,
+                thickness=2,
+            )
             self._hline_thick(
                 item.x + item._bar_start_x - scroll_x,
                 bar_y,
