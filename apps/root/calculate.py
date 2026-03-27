@@ -763,7 +763,12 @@ class _MathEditor:
             self._measure_slot(item.exponent)
             base_scale = self._slot_scale(item.base)
             raise_px = max(4, base_scale * 4)
-            exp_top = item.base.baseline - raise_px - item.exponent.baseline
+            exponent_floor = (
+                item.base.baseline
+                - raise_px
+                + (self._text_height(base_scale) - self._text_baseline(base_scale))
+            )
+            exp_top = exponent_floor - item.exponent.height
             top_shift = -exp_top if exp_top < 0 else 0
 
             item._base_top = top_shift
