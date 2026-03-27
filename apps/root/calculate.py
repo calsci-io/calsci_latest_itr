@@ -49,6 +49,11 @@ _WORK_RIGHT_PAD = 8
 _MESSAGE_TOP = 6
 _MESSAGE_HEIGHT = 11
 _ROOT_MIN_GAP = 6
+_ROOT_BAR_GAP = 2
+_ROOT_BAR_THICKNESS = 2
+_ROOT_LEG_THICKNESS = 2
+_ROOT_HOOK_THICKNESS = 3
+_ROOT_INNER_GAP = 2
 _EDITOR_BUCKET_KEY = "_calculate_editor"
 _PENDING_BUCKET_KEY = "_calculate_pending_action"
 _AUTO_CALL_TOKENS = {
@@ -789,14 +794,15 @@ class _MathEditor:
             self._measure_slot(item.degree)
             self._measure_slot(item.radicand)
             scale = self._slot_scale(item.radicand)
-            bar_thickness = 2
-            bar_gap = 2
+            bar_thickness = _ROOT_BAR_THICKNESS
+            bar_gap = _ROOT_BAR_GAP
+            leg_thickness = _ROOT_LEG_THICKNESS
             hook_dx = max(4, scale * 2)
             hook_dy = max(5, scale * 3)
-            rise_dx = max(8, scale * 4)
-            content_pad = max(2, scale)
+            raise_px = max(4, scale * 4)
+            descent = self._text_height(scale) - self._text_baseline(scale)
+            content_pad = leg_thickness + _ROOT_INNER_GAP
             item._degree_x = 0
-            item._degree_top = 0
             item._hook_start_x = item.degree.width + max(1, scale - 1)
             item._content_y = max(
                 bar_thickness + bar_gap + 1,
@@ -809,16 +815,21 @@ class _MathEditor:
                 item._bar_y + bar_thickness + 1,
                 item._vertex_y - hook_dy,
             )
-            rise_dx = max(rise_dx, (item._vertex_y - item._bar_y) // 2)
-            item._bar_start_x = item._vertex_x + rise_dx
+            item._bar_start_x = item._vertex_x
             item._content_x = item._bar_start_x + content_pad
+            degree_bottom = (
+                item._content_y
+                + item.radicand.baseline
+                - (raise_px - descent)
+            )
+            item._degree_top = max(0, degree_bottom - item.degree.height)
             item.width = item._content_x + max(
                 item.radicand.width,
                 self._placeholder_width(scale) + _ROOT_MIN_GAP,
             )
             item.baseline = item._content_y + item.radicand.baseline
             item.height = max(
-                item.degree.height,
+                item._degree_top + item.degree.height,
                 item._vertex_y + 1,
             )
             return
@@ -1085,20 +1096,19 @@ class _MathEditor:
                 hook_start_y,
                 vertex_x,
                 vertex_y,
-                thickness=2,
+                thickness=_ROOT_HOOK_THICKNESS,
             )
-            self._line_thick(
+            self._vline_thick(
                 vertex_x,
-                vertex_y,
-                item.x + item._bar_start_x - scroll_x,
                 bar_y,
-                thickness=2,
+                vertex_y - bar_y + 1,
+                thickness=_ROOT_LEG_THICKNESS,
             )
             self._hline_thick(
                 item.x + item._bar_start_x - scroll_x,
                 bar_y,
                 item.width - item._bar_start_x,
-                thickness=2,
+                thickness=_ROOT_BAR_THICKNESS,
             )
             return
 
