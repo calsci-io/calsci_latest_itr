@@ -1,4 +1,8 @@
 import st7565 as _display_driver
+try:
+    import time as _time
+except Exception:
+    _time = None
 
 try:
     import tools
@@ -38,22 +42,28 @@ from process_modules.ui_context import set_active_view
 
 
 _BASELINE = 6
-_PLACEHOLDER_SCALE_PAD = 2
-_FRACTION_PAD = 2
-_FRACTION_GAP = 2
-_MAIN_SCALE = 2
+_PLACEHOLDER_SCALE_PAD = 1
+_FRACTION_PAD = 1
+_FRACTION_GAP = 1
+_FRACTION_OUTER_GAP = 1
+_FRACTION_LINE_THICKNESS = 1
+_MAIN_SCALE = 1
 _SUB_SCALE = 1
 _BORDER_PAD = 3
 _WORK_LEFT = 8
 _WORK_RIGHT_PAD = 8
 _MESSAGE_TOP = 6
 _MESSAGE_HEIGHT = 11
-_ROOT_MIN_GAP = 6
-_ROOT_BAR_GAP = 2
-_ROOT_BAR_THICKNESS = 2
-_ROOT_LEG_THICKNESS = 2
-_ROOT_HOOK_THICKNESS = 3
-_ROOT_INNER_GAP = 2
+_ROOT_MIN_GAP = 1
+_ROOT_BAR_GAP = 1
+_ROOT_BAR_THICKNESS = 1
+_ROOT_LEG_THICKNESS = 1
+_ROOT_HOOK_THICKNESS = 2
+_ROOT_INNER_GAP = 1
+_EXPONENT_GAP = 1
+_LOG_GAP = 1
+_CURSOR_THICKNESS = 2
+_CURSOR_BLINK_MS = 450
 _EDITOR_BUCKET_KEY = "_calculate_editor"
 _PENDING_BUCKET_KEY = "_calculate_pending_action"
 _AUTO_CALL_TOKENS = {
@@ -64,6 +74,23 @@ _AUTO_CALL_TOKENS = {
     "acos": 1,
     "atan": 1,
 }
+
+
+def _ticks_ms():
+    if _time is None:
+        return 0
+    try:
+        return int(_time.ticks_ms())
+    except AttributeError:
+        pass
+    try:
+        return int(_time.monotonic() * 1000)
+    except Exception:
+        pass
+    try:
+        return int(_time.time() * 1000)
+    except Exception:
+        return 0
 
 
 def build_function(func_def, safe_globals):
@@ -291,10 +318,34 @@ class _MathEditor:
         self.scroll_x = 0
         self.scroll_y = 0
         self.message = ""
+        self._cursor_visible = True
+        self._cursor_last_toggle = _ticks_ms()
+
+    def _reset_cursor_blink(self):
+        self._cursor_visible = True
+        self._cursor_last_toggle = _ticks_ms()
+
+    def _update_cursor_blink(self):
+        now = _ticks_ms()
+        elapsed = now - self._cursor_last_toggle
+        if elapsed < _CURSOR_BLINK_MS:
+            return False
+        toggles = max(1, elapsed // _CURSOR_BLINK_MS)
+        changed = False
+        if toggles % 2:
+            self._cursor_visible = not self._cursor_visible
+            changed = True
+        self._cursor_last_toggle += toggles * _CURSOR_BLINK_MS
+        return changed
+
+    def idle(self):
+        if self._update_cursor_blink():
+            self.render()
 
     def _set_cursor(self, slot, index):
         self.cursor_slot = slot
         self.cursor_index = max(0, min(int(index), len(slot.items)))
+        self._reset_cursor_blink()
 
     def _slot_scale(self, slot):
         owner = getattr(slot, "owner", None)
@@ -327,6 +378,42 @@ class _MathEditor:
             return 0
         advance = (CHAR_ADVANCE - 1) * scale + self._text_spacing(scale)
         return (len(text) * advance) - self._text_spacing(scale)
+
+    def _text_pixel_span(self, text, scale):
+        text = str(text or "")
+        scale = max(1, int(scale))
+        if text == "":
+            return (0, 0)
+
+        spacing = self._text_spacing(scale)
+        cursor_x = 0
+        left = None
+        right = None
+
+        for char in text:
+            glyph = Characters.Chr2bytes(Characters, char)
+            for col_idx, col_bits in enumerate(glyph):
+                if not col_bits:
+                    continue
+                px = cursor_x + (col_idx * scale)
+                if left is None or px < left:
+                    left = px
+                col_right = px + scale - 1
+                if right is None or col_right > right:
+                    right = col_right
+            cursor_x += ((CHAR_ADVANCE - 1) * scale) + spacing
+
+        if left is None or right is None:
+            return (0, max(0, self._text_width(text, scale) - 1))
+        return (left, right)
+
+    def _slot_plain_text(self, slot):
+        parts = []
+        for item in getattr(slot, "items", []):
+            if not isinstance(item, TokenNode):
+                return None
+            parts.append(item.text)
+        return "".join(parts)
 
     def _placeholder_width(self, scale):
         scale = int(scale)
@@ -643,6 +730,7 @@ class _MathEditor:
         self.scroll_x = 0
         self.scroll_y = 0
         self.message = ""
+        self._reset_cursor_blink()
 
     def _slot_to_expression(self, slot):
         if not slot.items:
@@ -707,6 +795,7 @@ class _MathEditor:
         expression, ok = self._slot_to_expression(self.root)
         if not ok:
             self.message = "ERR: incomplete"
+            self._reset_cursor_blink()
             return
 
         try:
@@ -716,6 +805,7 @@ class _MathEditor:
             self.message = _format_result(raw_res)
         except Exception as exc:
             self.message = "ERR: {}".format(exc)
+        self._reset_cursor_blink()
 
     def _measure_slot(self, slot):
         scale = self._slot_scale(slot)
@@ -746,7 +836,10 @@ class _MathEditor:
     def _measure_item(self, item):
         if isinstance(item, TokenNode):
             scale = self._slot_scale(item.parent_slot)
-            item.width = max(self._placeholder_width(scale), self._text_width(item.text, scale))
+            item.width = max(
+                1,
+                self._text_width(item.text, scale) + self._text_spacing(scale),
+            )
             item.height = self._text_height(scale)
             item.baseline = self._text_baseline(scale)
             return
@@ -755,14 +848,16 @@ class _MathEditor:
             self._measure_slot(item.numerator)
             self._measure_slot(item.denominator)
             inner_w = max(item.numerator.width, item.denominator.width)
-            line_thickness = 2
+            line_thickness = _FRACTION_LINE_THICKNESS
             item.width = inner_w + (_FRACTION_PAD * 2)
-            item.baseline = item.numerator.height + _FRACTION_GAP
+            item.baseline = _FRACTION_OUTER_GAP + item.numerator.height + _FRACTION_GAP
             item.height = (
-                item.numerator.height
+                _FRACTION_OUTER_GAP
+                + item.numerator.height
                 + (_FRACTION_GAP * 2)
                 + line_thickness
                 + item.denominator.height
+                + _FRACTION_OUTER_GAP
             )
             return
 
@@ -781,7 +876,7 @@ class _MathEditor:
 
             item._base_top = top_shift
             item._exp_top = exp_top + top_shift
-            item._exp_x = item.base.width + max(1, base_scale - 1)
+            item._exp_x = item.base.width + _EXPONENT_GAP
             item.width = item._exp_x + item.exponent.width
             item.baseline = item._base_top + item.base.baseline
             item.height = max(
@@ -797,13 +892,12 @@ class _MathEditor:
             bar_thickness = _ROOT_BAR_THICKNESS
             bar_gap = _ROOT_BAR_GAP
             leg_thickness = _ROOT_LEG_THICKNESS
-            hook_dx = max(4, scale * 2)
-            hook_dy = max(5, scale * 3)
+            hook_dx = max(2, (max(4, scale * 2) + 1) // 2)
+            hook_dy = max(3, (max(5, scale * 3) + 1) // 2)
             raise_px = max(4, scale * 4)
-            descent = self._text_height(scale) - self._text_baseline(scale)
             content_pad = leg_thickness + _ROOT_INNER_GAP
             item._degree_x = 0
-            item._hook_start_x = item.degree.width + max(1, scale - 1)
+            item._hook_start_x = max(1, item.degree.width + 1 - hook_dx)
             item._content_y = max(
                 bar_thickness + bar_gap + 1,
                 item.degree.height - max(4, scale * 3),
@@ -817,11 +911,7 @@ class _MathEditor:
             )
             item._bar_start_x = item._vertex_x
             item._content_x = item._bar_start_x + content_pad
-            degree_bottom = (
-                item._content_y
-                + item.radicand.baseline
-                - (raise_px - descent)
-            )
+            degree_bottom = item._content_y + item.radicand.height - raise_px
             item._degree_top = max(0, degree_bottom - item.degree.height)
             item.width = item._content_x + max(
                 item.radicand.width,
@@ -843,16 +933,23 @@ class _MathEditor:
             label_height = self._text_height(item._label_scale)
             label_baseline = self._text_baseline(item._label_scale)
             paren_width = self._text_width("(", item._label_scale)
+            base_text = self._slot_plain_text(item.base)
+            base_left = 0
+            if base_text:
+                base_left, _ = self._text_pixel_span(base_text, item._label_scale)
 
             item.baseline = max(label_baseline, item.argument.baseline)
             item._label_top = item.baseline - label_baseline
             item._arg_top = item.baseline - item.argument.baseline
-            item._base_top = item._label_top + label_baseline + 1
-            item._base_x = max(0, item._label_width - self._text_spacing(item._label_scale))
-            item._open_x = item._label_width + item.base.width + 2
-            item._arg_x = item._open_x + paren_width
+            item._base_top = item._label_top + max(1, label_height // 2)
+            item._base_x = max(0, item._label_width + _LOG_GAP - base_left)
+            item._open_x = item._base_x + item.base.width
+            item._arg_x = item._open_x + paren_width + _LOG_GAP
             item._close_x = item._arg_x + item.argument.width
-            item.width = item._close_x + paren_width
+            item.width = max(
+                item._base_x + item.base.width,
+                item._close_x + paren_width,
+            )
             item.height = max(
                 item._label_top + label_height,
                 item._arg_top + item.argument.height,
@@ -884,8 +981,13 @@ class _MathEditor:
             inner_w = item.width - (_FRACTION_PAD * 2)
             num_x = item.x + _FRACTION_PAD + max(0, (inner_w - item.numerator.width) // 2)
             den_x = item.x + _FRACTION_PAD + max(0, (inner_w - item.denominator.width) // 2)
-            self._layout_slot(item.numerator, num_x, item.y, item.numerator.baseline)
-            den_y = item.y + item.baseline + _FRACTION_GAP + 2
+            self._layout_slot(
+                item.numerator,
+                num_x,
+                item.y + _FRACTION_OUTER_GAP,
+                item.numerator.baseline,
+            )
+            den_y = item.y + item.baseline + _FRACTION_GAP + _FRACTION_LINE_THICKNESS
             self._layout_slot(
                 item.denominator,
                 den_x,
@@ -1074,7 +1176,7 @@ class _MathEditor:
                 item.x + _FRACTION_PAD - scroll_x,
                 item.y + item.baseline - scroll_y,
                 item.width - (_FRACTION_PAD * 2),
-                thickness=2,
+                thickness=_FRACTION_LINE_THICKNESS,
             )
             return
 
@@ -1160,11 +1262,8 @@ class _MathEditor:
         return x, top, height
 
     def _draw_cursor(self, cursor_x, cursor_y, cursor_h):
-        thickness = 1 if self._slot_scale(self.cursor_slot) <= 1 else 2
-        for offset in range(thickness):
+        for offset in range(_CURSOR_THICKNESS):
             self._vline(cursor_x + offset, cursor_y, cursor_h)
-        self._pixel(cursor_x - 1, cursor_y)
-        self._pixel(cursor_x + thickness, cursor_y + cursor_h - 1)
 
     def _draw_scrollbars(
         self,
@@ -1264,7 +1363,9 @@ class _MathEditor:
 
         cursor_view_x = cursor_x - self.scroll_x
         cursor_view_y = cursor_y - self.scroll_y
-        self._draw_cursor(cursor_view_x, cursor_view_y, cursor_h)
+        self._update_cursor_blink()
+        if self._cursor_visible:
+            self._draw_cursor(cursor_view_x, cursor_view_y, cursor_h)
         self._draw_scrollbars(
             content_top,
             content_bottom,
@@ -1294,6 +1395,8 @@ class _MathEditor:
         if token == "":
             self.render()
             return
+
+        self._reset_cursor_blink()
 
         if token == "nav_l":
             self._move_linear(-1)
@@ -1336,7 +1439,26 @@ def _load_editor():
         data_bucket[_EDITOR_BUCKET_KEY] = editor
     if not hasattr(editor, "scroll_y"):
         editor.scroll_y = 0
+    if not hasattr(editor, "_cursor_visible"):
+        editor._cursor_visible = True
+    if not hasattr(editor, "_cursor_last_toggle"):
+        editor._cursor_last_toggle = _ticks_ms()
     return editor
+
+
+def _start_typing_with_editor_idle(editor):
+    original_idle_tasks = getattr(typer, "_idle_tasks", None)
+
+    def _combined_idle_tasks():
+        if callable(original_idle_tasks):
+            original_idle_tasks()
+        editor.idle()
+
+    typer._idle_tasks = _combined_idle_tasks
+    try:
+        return typer.start_typing()
+    finally:
+        typer._idle_tasks = original_idle_tasks
 
 
 def calculate():
@@ -1353,7 +1475,7 @@ def calculate():
     editor.render()
 
     while True:
-        token = typer.start_typing()
+        token = _start_typing_with_editor_idle(editor)
 
         if token is None:
             editor.render()
