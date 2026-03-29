@@ -97,6 +97,10 @@ def _set_status_from_sta():
 def scan_networks():
     sta_if.active(True)
     try:
+        sta_if.config(pm=0)
+    except Exception:
+        pass
+    try:
         return _extract_ssids(sta_if.scan())
     except Exception as err:
         print("WiFi scan failed:", err)
@@ -105,6 +109,10 @@ def scan_networks():
 
 def do_connect(ssid, password, timeout_s=6):
     sta_if.active(True)
+    try:
+        sta_if.config(pm=0)
+    except Exception:
+        pass
 
     if sta_if.isconnected():
         try:
@@ -134,6 +142,10 @@ def do_connect(ssid, password, timeout_s=6):
 
     connected = bool(sta_if.isconnected())
     if connected:
+        try:
+            sta_if.config(pm=0)
+        except Exception:
+            pass
         print("Connected. Network config:", sta_if.ifconfig())
     else:
         print("Failed. Not Connected to:", ssid)

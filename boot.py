@@ -151,7 +151,18 @@ def _auto_wifi_boot_task():
         auto_wifi_connector()
     except Exception as err:
         print("Auto WiFi init failed:", err)
+    finally:
         _sync_wifi_status_from_sta()
+
+    if not data_bucket.get("connection_status_g"):
+        return
+
+    try:
+        from process_modules.wireless_transfer import ensure_service
+
+        ensure_service(force_restart=False)
+    except Exception as err:
+        print("Wireless REPL init failed:", err)
 
 
 # Seed status quickly, then connect in background so boot UI is not blocked.

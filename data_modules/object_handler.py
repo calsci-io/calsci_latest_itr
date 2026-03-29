@@ -44,6 +44,10 @@ def _configure_wlan(iface, iface_type):
     try:
         if iface_type == network.STA_IF:
             iface.config(hostname="CalSci")
+            try:
+                iface.config(pm=0)
+            except Exception:
+                pass
         elif iface_type == network.AP_IF:
             iface.config(ssid="CalSci")
     except Exception:

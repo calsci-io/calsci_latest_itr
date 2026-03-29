@@ -19,6 +19,10 @@
         "5": {
             "app_name": "card_dashboard",
             "group_name": "installed_apps"
+        },
+        "6": {
+            "app_name": "wireless_repl",
+            "group_name": "installed_apps"
         }
     }
 }

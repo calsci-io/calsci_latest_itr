@@ -27,6 +27,10 @@ sta_if = network.WLAN(network.STA_IF)
 if not sta_if.active():
     sta_if.active(True)
     time.sleep(1)
+try:
+    sta_if.config(pm=0)
+except Exception:
+    pass
 
 def display_error_message(ssid):
     display.clear_display()
@@ -132,6 +136,12 @@ def wifi_connector():
             if connection_status:
                 data_bucket["ssid_g"] = ssid
                 update_wifi_credentials(ssid=ssid, password=password)
+                try:
+                    from process_modules.wireless_transfer import ensure_service
+
+                    ensure_service(force_restart=True)
+                except Exception as err:
+                    print("Wireless REPL start failed:", err)
                 display_ip_addresses(ssid)
             else:
                 display_error_message(ssid)
@@ -157,6 +167,10 @@ def wifi_connector():
 def do_connect(ssid, password):
     ssid = str(ssid).strip()
     sta_if.active(True)
+    try:
+        sta_if.config(pm=0)
+    except Exception:
+        pass
 
     if sta_if.isconnected():
         try:
@@ -188,6 +202,10 @@ def do_connect(ssid, password):
             break
         time.sleep(0.1)
     if connected:
+        try:
+            sta_if.config(pm=0)
+        except Exception:
+            pass
         print('\nConnected. Network config: ', sta_if.ifconfig())
         
     else:
