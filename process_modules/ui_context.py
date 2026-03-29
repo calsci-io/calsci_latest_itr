@@ -1,16 +1,14 @@
-import builtins
-
-
-_ACTIVE_VIEW_ATTR = "_calsci_active_view"
 _EDITABLE_VIEWS = {"text", "form"}
+_active_view = ""
 
 
 def set_active_view(view_name):
-    setattr(builtins, _ACTIVE_VIEW_ATTR, str(view_name or ""))
+    global _active_view
+    _active_view = str(view_name or "")
 
 
 def get_active_view():
-    return str(getattr(builtins, _ACTIVE_VIEW_ATTR, "") or "")
+    return str(_active_view or "")
 
 
 def is_menu_view():

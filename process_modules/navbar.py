@@ -118,6 +118,6 @@ class Nav:
             self.disp_out.write_data(cursor_line)
 
     def current_state(self):
-        if self.is_visible():
+        if self.state in ("a", "A", "b") or self.is_visible():
             return self._label()
         return ""

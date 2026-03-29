@@ -66,6 +66,7 @@ _CURSOR_THICKNESS = 2
 _CURSOR_BLINK_MS = 450
 _EDITOR_BUCKET_KEY = "_calculate_editor"
 _PENDING_BUCKET_KEY = "_calculate_pending_action"
+_MODE_STATE_UPDATE = object()
 _AUTO_CALL_TOKENS = {
     "sin": 1,
     "cos": 1,
@@ -1321,9 +1322,9 @@ class _MathEditor:
 
     def _nav_overlay(self):
         state = str(nav.current_state() or "")
-        show_overlay = state != "" and nav.is_visible()
-        nav.set_restore_callback(self.render if show_overlay else None)
-        if show_overlay:
+        nav_overlay_visible = state != "" and nav.is_visible()
+        nav.set_restore_callback(self.render if nav_overlay_visible else None)
+        if state != "":
             nav.draw_state(state)
 
     def render(self):
@@ -1448,6 +1449,9 @@ def _load_editor():
 
 def _start_typing_with_editor_idle(editor):
     original_idle_tasks = getattr(typer, "_idle_tasks", None)
+    keymap = getattr(typer, "keypad_map", None)
+    before_state = str(getattr(keymap, "state", "") or "")
+    before_locked = bool(nav.is_mode_locked())
 
     def _combined_idle_tasks():
         if callable(original_idle_tasks):
@@ -1456,9 +1460,27 @@ def _start_typing_with_editor_idle(editor):
 
     typer._idle_tasks = _combined_idle_tasks
     try:
-        return typer.start_typing()
+        token = typer.start_typing()
     finally:
         typer._idle_tasks = original_idle_tasks
+
+    if token in ("alpha", "beta"):
+        keypad_state_manager(x=token)
+        editor._reset_cursor_blink()
+        return _MODE_STATE_UPDATE
+
+    if token == "caps":
+        keypad_state_manager(x="A")
+        editor._reset_cursor_blink()
+        return _MODE_STATE_UPDATE
+
+    after_state = str(getattr(keymap, "state", "") or "")
+    after_locked = bool(nav.is_mode_locked())
+    if token == "" and (after_state != before_state or after_locked != before_locked):
+        editor._reset_cursor_blink()
+        return _MODE_STATE_UPDATE
+
+    return token
 
 
 def calculate():
@@ -1481,17 +1503,7 @@ def calculate():
             editor.render()
             continue
 
-        if token == "":
-            editor.render()
-            continue
-
-        if token in ("alpha", "beta"):
-            keypad_state_manager(x=token)
-            editor.render()
-            continue
-
-        if token == "caps":
-            keypad_state_manager(x="A")
+        if token is _MODE_STATE_UPDATE or token == "":
             editor.render()
             continue
 
