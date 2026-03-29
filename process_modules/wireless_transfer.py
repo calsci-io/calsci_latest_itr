@@ -261,11 +261,14 @@ def _start_webrepl(force_restart=False):
         return False
 
     _webrepl_started = True
+    ready = bool(_status.get("wifi_connected"))
     _update_status(
         password=DEFAULT_PASSWORD,
         webrepl_port=DEFAULT_WEBREPL_PORT,
         webrepl_ready=True,
         webrepl_error="",
+        state="ready" if ready else "idle",
+        message=_IDLE_MESSAGE if ready else "Connect Wi-Fi to enable WebREPL",
     )
     return True
 

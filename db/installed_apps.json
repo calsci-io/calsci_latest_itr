@@ -23,6 +23,10 @@
         "6": {
             "app_name": "wireless_repl",
             "group_name": "installed_apps"
+        },
+        "7": {
+            "app_name": "pc_folder_sync",
+            "group_name": "installed_apps"
         }
     }
 }
