@@ -23,6 +23,10 @@
         "14": {
             "app_name": "upi_pay_qr",
             "group_name": "installed_apps"
+        },
+        "15": {
+            "app_name": "stress",
+            "group_name": "installed_apps"
         }
-    }
+    }    
 }
