@@ -1,5 +1,6 @@
 # from data_modules.object_handler import test_deep_sleep_awake
 from sleeping_features import test_deep_sleep_awake, swdt
+import builtins
 import time
 import machine
 from machine import Pin
@@ -200,6 +201,12 @@ class Typer:
     def _idle_tasks(self):
         if self.nav is not None:
             self.nav.maybe_hide()
+        try:
+            form_refresh = getattr(builtins, "form_refresh", None)
+            if form_refresh is not None and hasattr(form_refresh, "idle"):
+                form_refresh.idle()
+        except Exception:
+            pass
 
     def start_typing(self):
         time.sleep(self.debounce_delay_time)

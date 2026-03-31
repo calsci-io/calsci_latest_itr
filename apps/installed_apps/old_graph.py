@@ -26,6 +26,7 @@ from data_modules.object_handler import (
     nav,
     typer,
 )
+from process_modules.ui_context import set_active_view
 
 DEBUG_GRAPH = False
 
@@ -390,12 +391,14 @@ def format_number(value):
 
 
 def _display_full(fb_buf):
+    set_active_view("graphics")
     display.graphics(fb_buf, page=0, column=0, width=DISPLAY_WIDTH, pages=DISPLAY_PAGES)
 
 
 def _display_page(fb_buf, page_index):
     start = page_index * DISPLAY_WIDTH
     end = start + DISPLAY_WIDTH
+    set_active_view("graphics")
     display.graphics(memoryview(fb_buf)[start:end], page=page_index, column=0, width=DISPLAY_WIDTH, pages=1)
 
 
@@ -406,6 +409,7 @@ def _display_plot_column(fb_buf, x_pixel, out_col_buf):
     for page in range(PLOT_PAGES):
         out_col_buf[page] = fb_buf[idx]
         idx += DISPLAY_WIDTH
+    set_active_view("graphics")
     display.graphics(out_col_buf, page=0, column=x_pixel, width=1, pages=PLOT_PAGES)
 
 
@@ -1177,6 +1181,18 @@ def old_graph(db={}):
     current_app[0] = "old_graph"
     current_app[1] = "installed_apps"
 
+    prev_form_ui_style = getattr(form, "ui_style", "classic")
+    prev_form_focus_inputs_only = getattr(form, "focus_inputs_only", False)
+    prev_form_blink_cursor = getattr(form, "blink_cursor", False)
+    prev_form_title = getattr(form, "title", "")
+    prev_form_input_cols = getattr(form, "input_cols", 19)
+
+    form.ui_style = "boxed"
+    form.focus_inputs_only = True
+    form.blink_cursor = True
+    form.title = "Old Graph"
+    form.input_cols = 19
+
     prev_debounce = getattr(typer, "debounce_delay_time", None)
 
     def _set_fast_poll():
@@ -1186,6 +1202,23 @@ def old_graph(db={}):
     def _restore_default_poll():
         if prev_debounce is not None:
             typer.debounce_delay_time = prev_debounce
+
+    def _start_typing_with_form_idle():
+        original_idle_tasks = getattr(typer, "_idle_tasks", None)
+
+        def _combined_idle_tasks():
+            if callable(original_idle_tasks):
+                original_idle_tasks()
+            try:
+                form_refresh.idle()
+            except Exception:
+                pass
+
+        typer._idle_tasks = _combined_idle_tasks
+        try:
+            return typer.start_typing()
+        finally:
+            typer._idle_tasks = original_idle_tasks
 
     try:
         _set_initial_form()
@@ -1199,7 +1232,7 @@ def old_graph(db={}):
 
         while True:
             _restore_default_poll()
-            inp = typer.start_typing()
+            inp = _start_typing_with_form_idle()
 
             if inp == "back":
                 current_app[0] = "installed_apps"
@@ -1410,6 +1443,11 @@ def old_graph(db={}):
             form_refresh.refresh(state=nav.current_state())
 
     finally:
+        form.ui_style = prev_form_ui_style
+        form.focus_inputs_only = prev_form_focus_inputs_only
+        form.blink_cursor = prev_form_blink_cursor
+        form.title = prev_form_title
+        form.input_cols = prev_form_input_cols
         if prev_debounce is not None:
             typer.debounce_delay_time = prev_debounce
         gc.collect()
