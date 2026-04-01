@@ -18,6 +18,7 @@ import utime as time  # type:ignore
 
 from data_modules.object_handler import (
     current_app,
+    chrs,
     display,
     form,
     form_refresh,
@@ -54,6 +55,8 @@ DISPLAY_PAGES = DISPLAY_HEIGHT // 8
 PLOT_HEIGHT_WITH_CURSOR = 56
 PLOT_PAGES = (PLOT_HEIGHT_WITH_CURSOR + 7) // 8
 BOTTOM_PAGE_INDEX = DISPLAY_PAGES - 1
+CHAR_HEIGHT = 8
+CHAR_ADVANCE = 6
 
 # Navigation / interaction config
 ZOOM_IN_FACTOR = 0.9
@@ -67,6 +70,21 @@ FAST_POLL_RESUME_DELAY_MS = 500
 SAMPLES_PER_PX_MIN = 5
 SAMPLES_PER_PX_MAX = 100
 EVAL_ABS_CLAMP = 1e10
+
+# Overlay menu config
+MENU_TITLE_Y = 1
+MENU_BOX_X = 2
+MENU_BOX_Y = 11
+MENU_BOX_W = 124
+MENU_BOX_H = 44
+MENU_VISIBLE_ROWS = 3
+MENU_SCROLL_W = 4
+MENU_ROW_X = MENU_BOX_X + 2
+MENU_ROW_Y = MENU_BOX_Y + 2
+MENU_ROW_W = MENU_BOX_W - MENU_SCROLL_W - 5
+MENU_ROW_H = 13
+MENU_ROW_GAP = 1
+MENU_CHECKBOX_SIZE = 7
 
 # Reused tiny buffers for partial column updates.
 _CURSOR_COL_BUF_A = bytearray(PLOT_PAGES)
@@ -167,17 +185,22 @@ TOOL_NONE = 0
 TOOL_AREA = 1
 TOOL_TANGENT = 2
 TOOL_NORMAL = 3
-TOOL_MENU_ITEMS = (TOOL_AREA, TOOL_TANGENT, TOOL_NORMAL)
+TOOL_COORDINATES = 4
+TOOL_MENU_ITEMS = (TOOL_AREA, TOOL_TANGENT, TOOL_NORMAL, TOOL_COORDINATES)
 TOOL_LABELS = {
     TOOL_AREA: "Area",
     TOOL_TANGENT: "Tangent",
     TOOL_NORMAL: "Normal",
+    TOOL_COORDINATES: "Coordinates",
 }
 TOOL_SHORT_LABELS = {
     TOOL_AREA: "A",
     TOOL_TANGENT: "T",
     TOOL_NORMAL: "N",
+    TOOL_COORDINATES: "C",
 }
+TOOLBOX_CANCEL_BACK = "__toolbox_cancel_back__"
+TOOLBOX_CLEAR_SELECTION = "__toolbox_clear_selection__"
 
 
 class ToolFeature:
@@ -269,6 +292,7 @@ class ToolState:
             TOOL_AREA: 0,
             TOOL_TANGENT: 0,
             TOOL_NORMAL: 0,
+            TOOL_COORDINATES: 0,
         }
 
     @property
@@ -289,6 +313,12 @@ class ToolState:
             return None
         return self.features[self.selected_index]
 
+    def clear(self):
+        self.features[:] = []
+        self.selected_index = None
+        for mode in self._counters:
+            self._counters[mode] = 0
+
     def set_mode(self, mode, cursor, bounds):
         next_number = self._counters.get(mode, 0) + 1
         self._counters[mode] = next_number
@@ -299,6 +329,10 @@ class ToolState:
         self.selected_index = len(self.features) - 1
         feature.sync_cursor(cursor, bounds)
         return True
+
+    def replace_mode(self, mode, cursor, bounds):
+        self.clear()
+        return self.set_mode(mode, cursor, bounds)
 
     def sync_cursor(self, cursor, bounds):
         feature = self.selected_feature()
@@ -885,21 +919,46 @@ def _format_area_text(area_value):
     return "A={:.4g}".format(area_value)
 
 
-def _format_line_tool_text(tool_feature, x_value, y_value, tan_slope):
-    x_text = _format_value_short(x_value)
-    if y_value is None:
-        return "x=" + x_text + " y=undef"
+def _format_optional_value(value):
+    if value is None:
+        return "undef"
+    return _format_value_short(value)
 
+
+def _format_xy_text(x_value, y_value):
+    return "x=" + _format_value_short(x_value) + " y=" + _format_optional_value(y_value)
+
+
+def _format_area_info_text(tool_feature, area_value):
+    x1_value, x2_value = tool_feature.area_interval()
+    return (
+        "x1="
+        + _format_value_short(x1_value)
+        + " x2="
+        + _format_value_short(x2_value)
+        + " area="
+        + _format_optional_value(area_value)
+    )
+
+
+def _format_line_tool_text(tool_feature, x_value, y_value, tan_slope):
+    info_text = _format_xy_text(x_value, y_value)
     if tool_feature.mode == TOOL_TANGENT:
-        if tan_slope is None:
-            return "x=" + x_text + " m=undef"
-        return "x=" + x_text + " m=" + _format_value_short(tan_slope)
+        metric_value = None if tan_slope is None else tan_slope
+        return info_text + " m=" + _format_optional_value(metric_value)
 
     if tan_slope is None:
-        return "x=" + x_text + " n=undef"
-    if abs(tan_slope) < 1e-9:
-        return "x=" + x_text + " n=inf"
-    return "x=" + x_text + " n=" + _format_value_short(-1.0 / tan_slope)
+        normal_value = None
+    elif abs(tan_slope) < 1e-9:
+        normal_value = "inf"
+    else:
+        normal_value = _format_value_short(-1.0 / tan_slope)
+
+    if normal_value is None:
+        normal_text = "undef"
+    else:
+        normal_text = str(normal_value)
+    return info_text + " n=" + normal_text
 
 
 def _tool_instance_label(tool_feature):
@@ -916,23 +975,147 @@ def _tool_row_text(tool_feature, bounds):
     return row
 
 
-def _draw_toolbox_menu(fb, fb_buf, selected_mode, tool_state):
+def _menu_top_index(item_count, selected_index, visible_rows=MENU_VISIBLE_ROWS):
+    if item_count <= visible_rows:
+        return 0
+    if selected_index < 0:
+        return 0
+    if selected_index >= item_count:
+        selected_index = item_count - 1
+    top_index = selected_index - visible_rows + 1
+    if top_index < 0:
+        top_index = 0
+    max_top = item_count - visible_rows
+    if top_index > max_top:
+        top_index = max_top
+    return top_index
+
+
+def _display_text(text_value):
+    return str(text_value or "").replace("_", " ")
+
+
+def _text_width(text_value):
+    text_value = str(text_value or "")
+    if not text_value:
+        return 0
+    return len(text_value) * CHAR_ADVANCE - 1
+
+
+def _clip_text_px(text_value, max_width):
+    text_value = _display_text(text_value)
+    if max_width <= 0:
+        return ""
+    max_chars = max(1, (int(max_width) + 1) // CHAR_ADVANCE)
+    if len(text_value) <= max_chars:
+        return text_value
+    if max_chars <= 3:
+        return text_value[:max_chars]
+    return text_value[: max_chars - 3] + "..."
+
+
+def _draw_ui_text(fb, text_value, x, y, color=1, max_width=None):
+    text_value = _display_text(text_value)
+    if max_width is not None:
+        text_value = _clip_text_px(text_value, max_width)
+
+    color = 1 if color else 0
+    cursor_x = int(x)
+    y = int(y)
+    for char in text_value:
+        glyph = chrs.Chr2bytes(char)
+        for col_idx, col_bits in enumerate(glyph):
+            px = cursor_x + col_idx
+            if px < 0 or px >= DISPLAY_WIDTH:
+                continue
+            for bit_idx in range(CHAR_HEIGHT):
+                py = y + bit_idx
+                if py < 0 or py >= DISPLAY_HEIGHT:
+                    continue
+                if col_bits & (1 << bit_idx):
+                    fb.pixel(px, py, color)
+        cursor_x += CHAR_ADVANCE
+    return text_value
+
+
+def _draw_menu_title(fb, text_value):
+    text_value = str(text_value or "")
+    title_x = max(0, (DISPLAY_WIDTH - _text_width(text_value)) // 2)
+    _draw_ui_text(fb, text_value, title_x, MENU_TITLE_Y, 1)
+
+
+def _draw_menu_shell(fb, title):
     fb.fill(0)
-    fb.text("TOOLBOX", 38, 2, 1)
+    _draw_menu_title(fb, title)
+    fb.rect(MENU_BOX_X, MENU_BOX_Y, MENU_BOX_W, MENU_BOX_H, 1)
 
-    y = 16
-    for mode in TOOL_MENU_ITEMS:
-        prefix = ">" if mode == selected_mode else " "
-        marker = "*" if mode == tool_state.mode else " "
-        count = tool_state.count_by_mode(mode)
-        count_text = ""
-        if count:
-            count_text = "(" + str(count) + ")"
-        fb.text((prefix + marker + " " + TOOL_LABELS[mode] + count_text)[:21], 4, y, 1)
-        y += 14
 
-    fb.text("OK=add", 4, 54, 1)
-    fb.text(",=list", 64, 54, 1)
+def _draw_menu_scrollbar(fb, item_count, top_index, visible_rows=MENU_VISIBLE_ROWS):
+    track_x = MENU_BOX_X + MENU_BOX_W - MENU_SCROLL_W - 1
+    track_y = MENU_BOX_Y + 2
+    track_h = MENU_BOX_H - 4
+
+    fb.rect(track_x, track_y, MENU_SCROLL_W, track_h, 1)
+
+    if item_count <= visible_rows:
+        thumb_h = track_h - 2
+        thumb_y = track_y + 1
+    else:
+        thumb_h = max(8, ((track_h - 2) * visible_rows) // item_count)
+        max_top = item_count - visible_rows
+        thumb_range = max(0, (track_h - 2) - thumb_h)
+        thumb_y = track_y + 1 + (top_index * thumb_range // max_top)
+
+    fb.fill_rect(track_x + 1, thumb_y, max(1, MENU_SCROLL_W - 2), thumb_h, 1)
+
+
+def _draw_checkbox(fb, x, y, checked, color):
+    color = 1 if color else 0
+    fb.rect(x, y, MENU_CHECKBOX_SIZE, MENU_CHECKBOX_SIZE, color)
+    if checked:
+        fb.fill_rect(x + 2, y + 2, MENU_CHECKBOX_SIZE - 4, MENU_CHECKBOX_SIZE - 4, color)
+
+
+def _draw_toolbox_row(fb, row_index, label, selected, checked):
+    row_y = MENU_ROW_Y + row_index * (MENU_ROW_H + MENU_ROW_GAP)
+    row_fill = 1 if selected else 0
+    text_color = 0 if selected else 1
+    checkbox_color = 0 if selected else 1
+
+    fb.fill_rect(MENU_ROW_X, row_y, MENU_ROW_W, MENU_ROW_H, row_fill)
+    fb.rect(MENU_ROW_X, row_y, MENU_ROW_W, MENU_ROW_H, 1)
+
+    checkbox_x = MENU_ROW_X + 2
+    checkbox_y = row_y + max(0, (MENU_ROW_H - MENU_CHECKBOX_SIZE) // 2)
+    _draw_checkbox(fb, checkbox_x, checkbox_y, checked, checkbox_color)
+
+    label_x = checkbox_x + MENU_CHECKBOX_SIZE + 4
+    label_y = row_y + 2
+    max_width = MENU_ROW_W - (label_x - MENU_ROW_X) - 2
+    _draw_ui_text(fb, label, label_x, label_y, text_color, max_width=max_width)
+
+
+def _draw_toolbox_menu(fb, fb_buf, selected_mode, tool_state):
+    _draw_menu_shell(fb, "Toolbox")
+    active_mode = tool_state.mode
+    selected_index = TOOL_MENU_ITEMS.index(selected_mode)
+    top_index = _menu_top_index(len(TOOL_MENU_ITEMS), selected_index)
+
+    for row_index in range(MENU_VISIBLE_ROWS):
+        item_index = top_index + row_index
+        if item_index >= len(TOOL_MENU_ITEMS):
+            break
+        mode = TOOL_MENU_ITEMS[item_index]
+        is_selected = item_index == selected_index
+        _draw_toolbox_row(
+            fb,
+            row_index,
+            TOOL_LABELS[mode],
+            selected=is_selected,
+            checked=(mode == active_mode),
+        )
+
+    _draw_menu_scrollbar(fb, len(TOOL_MENU_ITEMS), top_index)
     _display_full(fb_buf)
 
 
@@ -941,10 +1124,16 @@ def _open_toolbox_menu(fb, fb_buf, tool_state):
         selected_mode = tool_state.mode
     else:
         selected_mode = TOOL_AREA
+    ignore_open_key = True
 
     while True:
         _draw_toolbox_menu(fb, fb_buf, selected_mode, tool_state)
         key = typer.start_typing()
+
+        if ignore_open_key and key == "toolbox":
+            ignore_open_key = False
+            continue
+        ignore_open_key = False
 
         if key == "nav_u":
             idx = TOOL_MENU_ITEMS.index(selected_mode)
@@ -952,10 +1141,15 @@ def _open_toolbox_menu(fb, fb_buf, tool_state):
         elif key == "nav_d":
             idx = TOOL_MENU_ITEMS.index(selected_mode)
             selected_mode = TOOL_MENU_ITEMS[(idx + 1) % len(TOOL_MENU_ITEMS)]
-        elif key in ("ok", "toolbox"):
+        elif key == "ok":
+            if tool_state.active and tool_state.mode == selected_mode:
+                return TOOLBOX_CLEAR_SELECTION
             return selected_mode
+        elif key in ("AC", "nav_b", "-"):
+            if tool_state.active:
+                return TOOLBOX_CLEAR_SELECTION
         elif key == "back":
-            return None
+            return TOOLBOX_CANCEL_BACK
         elif key == "home":
             return "home"
         elif key in ("alpha", "beta"):
@@ -996,6 +1190,7 @@ def _open_used_tools_menu(fb, fb_buf, tool_state, bounds):
     selected_index = tool_state.selected_index if tool_state.selected_index is not None else 0
     scroll_index = 0
     changed = False
+    ignore_open_key = True
 
     while True:
         total = len(tool_state.features)
@@ -1016,6 +1211,11 @@ def _open_used_tools_menu(fb, fb_buf, tool_state, bounds):
         _draw_used_tools_menu(fb, fb_buf, tool_state, bounds, selected_index, scroll_index)
         key = typer.start_typing()
 
+        if ignore_open_key and key == ",":
+            ignore_open_key = False
+            continue
+        ignore_open_key = False
+
         if key == "nav_u" and total > 0:
             selected_index = (selected_index - 1) % total
         elif key == "nav_d" and total > 0:
@@ -1033,6 +1233,11 @@ def _open_used_tools_menu(fb, fb_buf, tool_state, bounds):
             return "home"
         elif key in ("alpha", "beta"):
             keypad_state_manager(x=key)
+
+
+def _draw_navbar_text(fb, text_value, plot_height):
+    fb.fill_rect(0, plot_height, DISPLAY_WIDTH, DISPLAY_HEIGHT - plot_height, 0)
+    _draw_ui_text(fb, text_value, 0, plot_height, 1, max_width=DISPLAY_WIDTH)
 
 
 def draw_cursor_overlay(fb, cursor, bounds, eval_fn, plot_height, tool_state=None):
@@ -1059,25 +1264,30 @@ def draw_cursor_overlay(fb, cursor, bounds, eval_fn, plot_height, tool_state=Non
             if marker_x + marker_w > DISPLAY_WIDTH:
                 marker_w = DISPLAY_WIDTH - marker_x
             fb.hline(marker_x, 0, marker_w, 1)
-        fb.fill_rect(0, plot_height, DISPLAY_WIDTH, DISPLAY_HEIGHT - plot_height, 0)
         area_value = _compute_area_value(eval_fn, selected_tool)
-        focus_px = _x_value_to_pixel(selected_tool.focused_x_value(), bounds, clamp=True)
-        info_text = _tool_instance_label(selected_tool) + " p" + str(focus_px)
-        info_text = info_text + " " + _format_area_text(area_value)
-        fb.text(info_text[:21], 0, plot_height, 1)
+        _draw_navbar_text(fb, _format_area_info_text(selected_tool, area_value), plot_height)
         return
 
-    if selected_tool is not None and selected_tool.mode in (TOOL_TANGENT, TOOL_NORMAL):
+    if selected_tool is not None and selected_tool.mode in (
+        TOOL_TANGENT,
+        TOOL_NORMAL,
+        TOOL_COORDINATES,
+    ):
         x_value = selected_tool.single_x
         x_px = _x_value_to_pixel(x_value, bounds, clamp=False)
         if x_px is not None:
             fb.vline(x_px, 0, plot_height, 1)
-        y_value, tan_slope = _get_tangent_info(eval_fn, bounds, x_value)
-        fb.fill_rect(0, plot_height, DISPLAY_WIDTH, DISPLAY_HEIGHT - plot_height, 0)
-        focus_px = _x_value_to_pixel(x_value, bounds, clamp=True)
-        info_text = _tool_instance_label(selected_tool) + " p" + str(focus_px)
-        info_text = info_text + " " + _format_line_tool_text(selected_tool, x_value, y_value, tan_slope)
-        fb.text(info_text[:21], 0, plot_height, 1)
+        y_value = safe_eval(eval_fn, x_value)
+        if selected_tool.mode == TOOL_COORDINATES:
+            _draw_navbar_text(fb, _format_xy_text(x_value, y_value), plot_height)
+            return
+
+        _, tan_slope = _get_tangent_info(eval_fn, bounds, x_value)
+        _draw_navbar_text(
+            fb,
+            _format_line_tool_text(selected_tool, x_value, y_value, tan_slope),
+            plot_height,
+        )
         return
 
     x_range = bounds["x_max"] - bounds["x_min"]
@@ -1255,6 +1465,7 @@ def old_graph(db={}):
                 expression = form.inp_list()["inp_0"]
                 replot(fb, fb_buf, expression, bounds, cursor, cache_buf, tool_state)
                 fast_poll_block_until_ms = None
+                ignore_graph_back_until_ms = None
 
                 try:
                     while True:
@@ -1271,6 +1482,12 @@ def old_graph(db={}):
                                 _set_fast_poll()
 
                         key = typer.start_typing()
+                        if ignore_graph_back_until_ms is not None:
+                            if _ticks_diff(time.ticks_ms(), ignore_graph_back_until_ms) < 0:
+                                if key == "back":
+                                    continue
+                            else:
+                                ignore_graph_back_until_ms = None
 
                         if key in ("a", "A", "module", "copy"):
                             cursor.toggle()
@@ -1370,15 +1587,21 @@ def old_graph(db={}):
 
                         elif key == "toolbox":
                             _restore_default_poll()
-                            selected_mode = _open_toolbox_menu(fb, fb_buf, tool_state)
-                            if selected_mode == "home":
+                            toolbox_action = _open_toolbox_menu(fb, fb_buf, tool_state)
+                            if toolbox_action == "home":
                                 current_app[0] = "home"
                                 current_app[1] = "root"
                                 return
-                            if selected_mode is not None:
+                            if toolbox_action == TOOLBOX_CANCEL_BACK:
+                                ignore_graph_back_until_ms = _ticks_add(time.ticks_ms(), 180)
+                            elif toolbox_action == TOOLBOX_CLEAR_SELECTION:
+                                tool_state.clear()
+                                cursor.active = False
+                                cursor.prev_x_pixel = cursor.x_pixel
+                            elif toolbox_action is not None:
                                 if not cursor.active:
                                     cursor.toggle()
-                                tool_state.set_mode(selected_mode, cursor, bounds)
+                                tool_state.replace_mode(toolbox_action, cursor, bounds)
                             feature_active = cursor.active or tool_state.active
                             if feature_active:
                                 _restore_default_poll()

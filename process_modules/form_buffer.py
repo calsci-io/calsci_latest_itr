@@ -36,8 +36,9 @@ class Form:
         self.input_display_position = input_display_position
         self.input_cols = input_cols
         self.focus_inputs_only = False
-        self.ui_style = "classic"
-        self.blink_cursor = False
+        self.ui_style = "boxed"
+        self.blink_cursor = True
+        self.title = ""
         self.actual_rows = (
             self.rows if len(self.form_list) >= self.rows else len(self.form_list)
         )

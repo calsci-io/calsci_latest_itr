@@ -37,6 +37,8 @@ PANEL_H = 53
 FIELD_H = 24
 FIELD_GAP = 2
 VISIBLE_FIELDS = 2
+ROW_H = 13
+ROW_GAP = 1
 SCROLL_W = 4
 CONTENT_X = PANEL_X + 2
 CONTENT_Y = PANEL_Y + 2
@@ -375,68 +377,136 @@ class Tbf:
             return _title_case(formatted)
         return formatted
 
-    def _boxed_fields(self):
-        if hasattr(self.f_b, "_input_indices"):
-            input_indices = self.f_b._input_indices()
-        else:
-            input_indices = [
-                index
-                for index, item in enumerate(getattr(self.f_b, "form_list", []))
-                if "inp_" in str(item)
-            ]
+    def _normalized_state(self, state):
+        state = str(state or "")
+        if state == "" or self.nav is None:
+            return state
 
-        fields = []
-        for input_index in input_indices:
-            label = ""
-            if input_index > 0:
-                label = self.f_b.form_list[input_index - 1]
-            fields.append((input_index, _display_text(label), self.f_b.form_list[input_index]))
-        return fields
+        try:
+            nav_label = str(self.nav._label() or "")
+        except Exception:
+            nav_label = ""
 
-    def _selected_field_index(self, fields):
-        if not fields:
+        try:
+            nav_visible = bool(self.nav.is_visible())
+        except Exception:
+            nav_visible = False
+
+        if not nav_visible and nav_label != "" and state == nav_label:
+            return ""
+        return state
+
+    def _is_input_row(self, index):
+        if hasattr(self.f_b, "_is_input_row"):
+            return bool(self.f_b._is_input_row(index))
+        form_list = getattr(self.f_b, "form_list", [])
+        if index < 0 or index >= len(form_list):
+            return False
+        return "inp_" in str(form_list[index])
+
+    def _boxed_blocks(self):
+        form_list = list(getattr(self.f_b, "form_list", []) or [])
+        blocks = []
+        index = 0
+        while index < len(form_list):
+            if (
+                index + 1 < len(form_list)
+                and not self._is_input_row(index)
+                and self._is_input_row(index + 1)
+            ):
+                blocks.append(
+                    {
+                        "type": "field",
+                        "label_index": index,
+                        "input_index": index + 1,
+                        "label": _display_text(form_list[index]),
+                        "key": form_list[index + 1],
+                    }
+                )
+                index += 2
+                continue
+
+            if self._is_input_row(index):
+                blocks.append(
+                    {
+                        "type": "field",
+                        "label_index": None,
+                        "input_index": index,
+                        "label": "",
+                        "key": form_list[index],
+                    }
+                )
+            else:
+                blocks.append(
+                    {
+                        "type": "row",
+                        "row_index": index,
+                        "text": _display_text(form_list[index]),
+                    }
+                )
+            index += 1
+        return blocks
+
+    def _selected_block_index(self, blocks):
+        if not blocks:
             return 0
         selected_form_index = getattr(self.f_b, "menu_cursor", 0)
-        for field_pos, field in enumerate(fields):
-            if field[0] == selected_form_index:
-                return field_pos
+        for block_index, block in enumerate(blocks):
+            if block["type"] == "field":
+                if selected_form_index in (
+                    block.get("label_index"),
+                    block.get("input_index"),
+                ):
+                    return block_index
+            elif block.get("row_index") == selected_form_index:
+                return block_index
         return 0
 
-    def _top_field_index(self, field_count, selected_index):
-        if field_count <= VISIBLE_FIELDS:
-            return 0
-        top_index = selected_index - VISIBLE_FIELDS + 1
-        if top_index < 0:
-            top_index = 0
-        max_top = field_count - VISIBLE_FIELDS
-        if top_index > max_top:
-            top_index = max_top
-        return top_index
+    def _block_height(self, block):
+        if block.get("type") == "field":
+            return FIELD_H
+        return ROW_H
 
-    def _field_y(self, field_slot):
-        field_slot = max(0, int(field_slot))
-        inner_y = CONTENT_Y
+    def _visible_block_window(self, blocks, selected_index):
+        if not blocks:
+            return 0, 0
+
         inner_h = PANEL_H - 4
-        if VISIBLE_FIELDS <= 1:
-            return inner_y
-        total_h = VISIBLE_FIELDS * FIELD_H
-        gap_space = max(0, inner_h - total_h)
-        gap = gap_space // (VISIBLE_FIELDS - 1)
-        return inner_y + field_slot * (FIELD_H + gap)
+        top_index = min(max(0, int(selected_index)), len(blocks) - 1)
+        total_h = self._block_height(blocks[top_index])
 
-    def _draw_vertical_scrollbar(self, item_count, top_index):
+        while top_index > 0:
+            next_h = self._block_height(blocks[top_index - 1]) + ROW_GAP
+            if total_h + next_h > inner_h:
+                break
+            top_index -= 1
+            total_h += next_h
+
+        bottom_index = top_index
+        used_h = 0
+        while bottom_index < len(blocks):
+            block_h = self._block_height(blocks[bottom_index])
+            add_h = block_h if bottom_index == top_index else block_h + ROW_GAP
+            if used_h + add_h > inner_h:
+                break
+            used_h += add_h
+            bottom_index += 1
+        return top_index, bottom_index
+
+    def _draw_vertical_scrollbar(self, item_count, top_index, visible_count):
         track_x = PANEL_X + PANEL_W - SCROLL_W - 2
         track_y = PANEL_Y + 2
         track_h = PANEL_H - 4
         self._fill_rect(track_x, track_y, SCROLL_W, track_h, 0)
         self._rect(track_x, track_y, SCROLL_W, track_h, 1)
 
-        if item_count <= VISIBLE_FIELDS:
+        visible_count = max(1, int(visible_count))
+        if item_count <= visible_count:
             thumb_h = track_h - 2
             thumb_y = track_y + 1
         else:
-            thumb_h = max(8, ((track_h - 2) * VISIBLE_FIELDS) // item_count)
-            max_top = item_count - VISIBLE_FIELDS
+            thumb_h = max(8, ((track_h - 2) * visible_count) // item_count)
+            max_top = item_count - visible_count
             thumb_range = max(0, (track_h - 2) - thumb_h)
             thumb_y = track_y + 1 + (top_index * thumb_range // max_top)
 
@@ -477,8 +547,23 @@ class Tbf:
         self._fill_rect(0, STATUS_Y - 1, DISPLAY_WIDTH, 9, 1)
         self._draw_text_center(state, STATUS_Y, color=0)
 
-    def _draw_boxed_field(self, field_slot, field_index, label, key):
-        field_y = self._field_y(field_slot)
+    def _draw_boxed_row(self, row_y, text_value, selected):
+        row_y = int(row_y)
+        row_fill = 1 if selected else 0
+        text_color = 0 if selected else 1
+        self._fill_rect(CONTENT_X, row_y, CONTENT_W, ROW_H, row_fill)
+        self._rect(CONTENT_X, row_y, CONTENT_W, ROW_H, 1)
+        self._draw_text_in_rect(
+            text_value,
+            CONTENT_X + 2,
+            row_y + 1,
+            CONTENT_W - 4,
+            ROW_H - 2,
+            color=text_color,
+            align="left",
+        )
+
+    def _draw_boxed_field(self, field_y, block, selected):
         label_x = CONTENT_X
         label_y = field_y
         label_w = CONTENT_W
@@ -486,7 +571,9 @@ class Tbf:
         input_y = field_y + INPUT_Y_OFFSET
         input_w = CONTENT_W
         input_h = INPUT_H
-        selected = field_index == getattr(self.f_b, "menu_cursor", -1)
+        label = block.get("label", "")
+        key = block.get("key")
+        input_active = getattr(self.f_b, "menu_cursor", -1) == block.get("input_index")
 
         if selected:
             self._fill_rect(label_x, label_y, label_w, LABEL_H, 1)
@@ -505,7 +592,7 @@ class Tbf:
 
         raw_value = str(self.f_b.inp_list().get(key, " ") or " ")
         value_text = raw_value.rstrip()
-        display_pos = self.f_b.inp_display_position() if selected else 0
+        display_pos = self.f_b.inp_display_position() if input_active else 0
         visible_chars = max(1, self.f_b.inp_cols())
         visible_text = value_text[display_pos : display_pos + visible_chars]
         has_overflow = len(value_text) >= visible_chars
@@ -526,7 +613,7 @@ class Tbf:
             max_width=input_w - 2,
         )
 
-        if selected and self._cursor_visible:
+        if input_active and self._cursor_visible:
             visible_cursor = self.f_b.inp_cursor() - display_pos
             if visible_cursor < 0:
                 visible_cursor = 0
@@ -553,23 +640,27 @@ class Tbf:
 
     def _refresh_boxed(self, state="", force=False):
         self._sync_blink_signature()
-        state = str(state or "")
-        fields = self._boxed_fields()
-        selected_index = self._selected_field_index(fields)
-        top_index = self._top_field_index(len(fields), selected_index)
+        state = self._normalized_state(state)
+        blocks = self._boxed_blocks()
+        selected_index = self._selected_block_index(blocks)
+        top_index, bottom_index = self._visible_block_window(blocks, selected_index)
 
         self._clear()
         self._draw_text_center(self._title_text(), TITLE_Y, color=1)
         self._rect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 1)
 
-        for slot in range(VISIBLE_FIELDS):
-            field_pos = top_index + slot
-            if field_pos >= len(fields):
-                break
-            field_index, label, key = fields[field_pos]
-            self._draw_boxed_field(slot, field_index, label, key)
+        current_y = CONTENT_Y
+        for block_index in range(top_index, bottom_index):
+            block = blocks[block_index]
+            selected = block_index == selected_index
+            if block.get("type") == "field":
+                self._draw_boxed_field(current_y, block, selected)
+                current_y += FIELD_H + ROW_GAP
+            else:
+                self._draw_boxed_row(current_y, block.get("text", ""), selected)
+                current_y += ROW_H + ROW_GAP
 
-        self._draw_vertical_scrollbar(len(fields), top_index)
+        self._draw_vertical_scrollbar(len(blocks), top_index, bottom_index - top_index)
         self._draw_footer(state=state)
         self._flush(force=force)
 
@@ -600,6 +691,7 @@ class Tbf:
 
         if state is None:
             state = self.nav.current_state() if self.nav is not None else ""
+        state = self._normalized_state(state)
 
         if self._use_boxed_layout():
             self._refresh_boxed(state=state, force=force)
