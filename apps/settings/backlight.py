@@ -12,6 +12,7 @@ import st7565 as display
 
 from machine import Pin, PWM  # type: ignore
 from tinydb import TinyDB, Query
+from data_modules.hardware_config import BACKLIGHT_GPIO
 
 from data_modules.object_handler import (
     app,
@@ -27,19 +28,21 @@ from data_modules.object_handler import (
 db = TinyDB("db/settings.json")
 q = Query()
 
-BACKLIGHT_GPIO = 5
 BACKLIGHT_LEVEL_MIN = 0
 BACKLIGHT_LEVEL_MAX = 10
 BACKLIGHT_PWM_MAX = 1023
 BACKLIGHT_PWM_FREQ = 1000
 
-backlight_pin = Pin(BACKLIGHT_GPIO, Pin.OUT)
-backlight_pwm = PWM(backlight_pin)
-
-try:
-    backlight_pwm.freq(BACKLIGHT_PWM_FREQ)
-except Exception:
-    pass
+backlight_pin = None
+backlight_pwm = None
+if BACKLIGHT_GPIO is not None:
+    try:
+        backlight_pin = Pin(BACKLIGHT_GPIO, Pin.OUT)
+        backlight_pwm = PWM(backlight_pin)
+        backlight_pwm.freq(BACKLIGHT_PWM_FREQ)
+    except Exception:
+        backlight_pin = None
+        backlight_pwm = None
 
 
 def _normalize_level(level):
@@ -87,13 +90,15 @@ def _level_to_duty(level):
 def set_backlight_level(level, persist=True):
     level = _normalize_level(level)
     duty = _level_to_duty(level)
-    try:
-        backlight_pwm.duty(duty)
-    except Exception:
-        if level <= 0:
-            backlight_pin.on()
-        else:
-            backlight_pin.off()
+    if backlight_pwm is not None:
+        try:
+            backlight_pwm.duty(duty)
+        except Exception:
+            if backlight_pin is not None:
+                if level <= 0:
+                    backlight_pin.on()
+                else:
+                    backlight_pin.off()
     if persist:
         _update_setting("backlight_level", level)
         _update_setting("backlight", level > 0)
@@ -177,4 +182,3 @@ def backlight(db_data={}):
 
         if inp in ("nav_u", "nav_d"):
             _refresh_screen(preview_level)
-

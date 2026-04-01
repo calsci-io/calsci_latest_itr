@@ -1,4 +1,4 @@
-import st7565 as display
+import st7565 as _st7565
 
 # try:
 #     import tools
@@ -12,6 +12,15 @@ import st7565 as display
 
 import machine
 import builtins
+from data_modules.hardware_config import (
+    APP_THREAD_ENABLED,
+    DISPLAY_ENABLED,
+    KEYPAD_COLS,
+    KEYPAD_ENABLED,
+    KEYPAD_ROWS,
+    LOCAL_UI_ENABLED,
+    st7565_display_pins,
+)
 from process_modules.text_buffer import Textbuffer
 from process_modules.text_buffer_uploader import Tbf as text_tbf
 
@@ -50,20 +59,74 @@ ap_if.active(False)
 # e = espnow.ESPNow()
 current_app=["home", ""]
 data_bucket={"ssid_g" : "", "connection_status_g" : False}
-# keypad_rows=[26, 25, 33, 32, 35, 34, 39, 36] #3.0
-# keypad_cols=[15, 13, 12, 14, 27] #3.0
-keypad_rows=[14, 21, 47, 48, 38, 39, 40, 41, 42, 1] #2.9
-keypad_cols=[8, 18, 17, 15, 7] #2.9                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
-# st7565_display_pins={"cs1":2, "rs":16, "rst":4, "sda":5, "sck":17}  #3.0
-st7565_display_pins={"cs1":9, "rs":10, "rst":11, "sda":12, "sck":13} #2.9
+keypad_rows=list(KEYPAD_ROWS)
+keypad_cols=list(KEYPAD_COLS)
 # display.init(st7565_display_pins["cs1"], st7565_display_pins["rs"], st7565_display_pins["rst"], st7565_display_pins["sda"], st7565_display_pins["sck"])
 # display.init(9, 11, 10, 13, 12)
-display=display
+class _NullDisplay:
+    WIDTH = getattr(_st7565, "WIDTH", 128)
+    HEIGHT = getattr(_st7565, "HEIGHT", 64)
+    PAGES = getattr(_st7565, "PAGES", 8)
+
+    def init(self, *args, **kwargs):
+        return False
+
+    def deinit(self, *args, **kwargs):
+        return None
+
+    def clear_display(self, *args, **kwargs):
+        return None
+
+    def set_page_address(self, *args, **kwargs):
+        return None
+
+    def set_column_address(self, *args, **kwargs):
+        return None
+
+    def write_data(self, *args, **kwargs):
+        return None
+
+    def write_instruction(self, *args, **kwargs):
+        return None
+
+    def graphics(self, *args, **kwargs):
+        return None
+
+    def on(self, *args, **kwargs):
+        return None
+
+    def off(self, *args, **kwargs):
+        return None
+
+    def invert(self, *args, **kwargs):
+        return None
+
+    def all_points_on(self, *args, **kwargs):
+        return None
+
+
+class _NullKeypad:
+    def __init__(self, rows=(), cols=()):
+        self.rows = list(rows)
+        self.cols = list(cols)
+        self.keypad_loop = self._disabled_loop
+
+    def _disabled_loop(self):
+        raise RuntimeError("Keypad disabled")
+
+    def keypad_start(self):
+        return None
+
+    def keypad_stop(self):
+        return None
+
+
+display = _st7565 if DISPLAY_ENABLED else _NullDisplay()
 # display.write_instruction(0x81) #for only 3.0
 # display.write_instruction(9)
 # import display
 keymap = Keypad_5X8()
-keyin = Keypad(rows=keypad_rows, cols=keypad_cols)
+keyin = Keypad(rows=keypad_rows, cols=keypad_cols) if KEYPAD_ENABLED else _NullKeypad(rows=keypad_rows, cols=keypad_cols)
 typer = Typer(keypad=keyin, keypad_map=keymap)
 
 chrs=Characters()
@@ -96,6 +159,8 @@ builtins.mac_str=mac_str
 
 apps_installer=Apps()
 builtins.apps_installer=apps_installer
+builtins.hardware_local_ui_enabled = LOCAL_UI_ENABLED
+builtins.hardware_app_thread_enabled = APP_THREAD_ENABLED
 
 def keypad_state_manager(x):
     if keymap.state == "a" and x[0] == "a":

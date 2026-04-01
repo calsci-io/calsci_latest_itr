@@ -1,46 +1,19 @@
-import st7565 as display
-
-# try:
-#     import tools
-#     if hasattr(display, "graphics") and not hasattr(display.graphics, "pixels_changed"):
-#         display.graphics = tools.refresh(display.graphics, pixels_changed=200)
-# except Exception:
-#     pass
-
-# Copyright (c) 2025 CalSci
-# Licensed under the MIT License.
-
-# from data_modules.object_handler import display, form, form_refresh
-# form.form_list = ["CalSciCalSciCalSciCal", "alSciCalSciCalSciCalS", "lSciCalSciCalSciCalSc", "SciCalSciCalSciCalSci", "ciCalSciCalSciCalSciC", "iCalSciCalSciCalSciCa", "CalSciCalSciCalSciCal", "alSciCalSciCalSciCalS"]
-# form.update()
-# # display.clear_display()
-# form_refresh.refresh()
-
 import _thread
 import builtins
 import sys
 
-from process_modules.app_handler import app_handler
-# from process_modules.auto_wifi_connector import auto_wifi_connector
-# import json
-
-# boot_up_file = "db/boot_up.json"
-# with open(boot_up_file, 'r') as file:
-#         boot_up_data = json.load(file)
-
-# if boot_up_data["states"]["wifi_connected"]:
-#     auto_wifi_connector()
-# app_handler(last_used_app=boot_up_data["data_points"]["last_used_app"], last_used_app_folder=boot_up_data["data_points"]["last_used_app_folder"])
+from data_modules.hardware_config import app_thread_is_enabled
 
 
 def _run_app_handler():
     try:
+        from process_modules.app_handler import app_handler
         app_handler()
     except Exception as exc:
         sys.print_exception(exc)
 
 
-if not getattr(builtins, "_calsci_app_thread_started", False):
+if app_thread_is_enabled() and not getattr(builtins, "_calsci_app_thread_started", False):
     builtins._calsci_app_thread_started = True
     _thread.stack_size(32 * 1024)
     _thread.start_new_thread(_run_app_handler, ())
