@@ -1298,6 +1298,25 @@ class Tbf:
         self._fill_rect(0, STATUS_Y - 1, DISPLAY_WIDTH, 9, 1)
         self._draw_text_center(state, STATUS_Y, color=0)
 
+    def _custom_bottom_text(self):
+        provider = getattr(self.f_b, "bottom_page_text_provider", None)
+        if callable(provider):
+            try:
+                value = provider()
+            except Exception:
+                value = ""
+        else:
+            value = provider
+        return str(value or "")
+
+    def _draw_custom_bottom_text(self):
+        text_value = self._custom_bottom_text()
+        if text_value == "":
+            return False
+        self._fill_rect(0, STATUS_Y, DISPLAY_WIDTH, 8, 0)
+        self._draw_text_center(text_value[:21], STATUS_Y, color=1)
+        return True
+
     def _input_view(self, block, input_active, visible_chars=None):
         key = block.get("key")
         raw_value = str(self.f_b.inp_list().get(key, " ") or " ")
@@ -1477,10 +1496,30 @@ class Tbf:
         field_h = metrics["hfield_h"]
         label = block.get("label", "")
         input_active = getattr(self.f_b, "menu_cursor", -1) == block.get("input_index")
+        preferred_label_w = getattr(
+            self.f_b, "compact_hfield_label_w", COMPACT_HFIELD_LABEL_W
+        )
+        label_pad_x = getattr(
+            self.f_b, "compact_hfield_label_pad_x", COMPACT_HFIELD_LABEL_PAD_X
+        )
+        try:
+            preferred_label_w = int(preferred_label_w or COMPACT_HFIELD_LABEL_W)
+        except Exception:
+            preferred_label_w = COMPACT_HFIELD_LABEL_W
+        try:
+            label_pad_x = int(label_pad_x or 0)
+        except Exception:
+            label_pad_x = COMPACT_HFIELD_LABEL_PAD_X
+        if label_pad_x < 0:
+            label_pad_x = 0
+        label_min_w = max(
+            12,
+            _text_width(label) + (label_pad_x * 2) + 2,
+        )
 
         label_w = min(
-            max(24, COMPACT_HFIELD_LABEL_W),
-            max(24, content_w - COMPACT_HFIELD_MIN_INPUT_W),
+            max(label_min_w, preferred_label_w),
+            max(label_min_w, content_w - COMPACT_HFIELD_MIN_INPUT_W),
         )
         input_x = content_x + label_w + COMPACT_HFIELD_GAP_X
         input_w = max(
@@ -1504,9 +1543,9 @@ class Tbf:
         self._rect(content_x, field_y, label_w, field_h, 1)
         self._draw_text_in_rect(
             label,
-            content_x + COMPACT_HFIELD_LABEL_PAD_X,
+            content_x + label_pad_x,
             field_y + COMPACT_HFIELD_LABEL_PAD_Y,
-            label_w - (COMPACT_HFIELD_LABEL_PAD_X * 2),
+            label_w - (label_pad_x * 2),
             max(1, field_h - COMPACT_HFIELD_LABEL_PAD_Y),
             color=0,
             align="center",
@@ -1703,6 +1742,8 @@ class Tbf:
         self._draw_vertical_scrollbar(metrics, len(blocks), top_index, bottom_index - top_index)
         if metrics.get("show_footer"):
             self._draw_footer(state=state)
+        elif state == "":
+            self._draw_custom_bottom_text()
         self._flush(force=force)
 
         if self.nav is not None:
