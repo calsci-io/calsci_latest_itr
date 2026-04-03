@@ -27,6 +27,7 @@ from data_modules.object_handler import (
     nav,
     typer,
 )
+from process_modules.navigation import NavigationRequest, register_app_entry
 from process_modules.ui_context import set_active_view
 
 DEBUG_GRAPH = False
@@ -48,6 +49,44 @@ def _ticks_add(base_ms, delta_ms):
     return base_ms + delta_ms
 
 
+def _back_guard_duration_ms(base_delay_sec=None):
+    debounce_ms = 0
+    try:
+        debounce_ms = int(max(0.0, float(base_delay_sec or 0.0)) * 1000)
+    except Exception:
+        debounce_ms = 0
+
+    duration_ms = debounce_ms + BACK_KEY_GUARD_EXTRA_MS
+    if duration_ms < BACK_KEY_GUARD_MS:
+        return BACK_KEY_GUARD_MS
+    return duration_ms
+
+
+def _translate_navigation_request(nav_request, consume_local_back=False):
+    target = (nav_request.app_name, nav_request.group_name)
+    if target == ("home", "root"):
+        return "home"
+    if target == ("installed_apps", "root"):
+        if consume_local_back:
+            register_app_entry("old_graph", "installed_apps")
+        return "back"
+    raise nav_request
+
+
+def _start_typing_with_navigation_fallback(consume_local_back=False):
+    try:
+        return typer.start_typing()
+    except NavigationRequest as nav_request:
+        return _translate_navigation_request(
+            nav_request,
+            consume_local_back=consume_local_back,
+        )
+
+
+def _restore_old_graph_navigation_entry():
+    register_app_entry("old_graph", "installed_apps")
+
+
 # Display config
 DISPLAY_WIDTH = 128
 DISPLAY_HEIGHT = 64
@@ -65,6 +104,8 @@ PAN_SHIFT_FACTOR = 0.09       #  set
 INPUT_POLL_MS = 0.5
 INPUT_POLL_SEC = INPUT_POLL_MS / 1000.0
 FAST_POLL_RESUME_DELAY_MS = 500
+BACK_KEY_GUARD_MS = 180
+BACK_KEY_GUARD_EXTRA_MS = 120
 
 # Plot quality config
 SAMPLES_PER_PX_MIN = 5
@@ -1128,7 +1169,7 @@ def _open_toolbox_menu(fb, fb_buf, tool_state):
 
     while True:
         _draw_toolbox_menu(fb, fb_buf, selected_mode, tool_state)
-        key = typer.start_typing()
+        key = _start_typing_with_navigation_fallback(consume_local_back=True)
 
         if ignore_open_key and key == "toolbox":
             ignore_open_key = False
@@ -1209,7 +1250,7 @@ def _open_used_tools_menu(fb, fb_buf, tool_state, bounds):
             scroll_index = 0
 
         _draw_used_tools_menu(fb, fb_buf, tool_state, bounds, selected_index, scroll_index)
-        key = typer.start_typing()
+        key = _start_typing_with_navigation_fallback(consume_local_back=True)
 
         if ignore_open_key and key == ",":
             ignore_open_key = False
@@ -1426,7 +1467,7 @@ def old_graph(db={}):
 
         typer._idle_tasks = _combined_idle_tasks
         try:
-            return typer.start_typing()
+            return _start_typing_with_navigation_fallback()
         finally:
             typer._idle_tasks = original_idle_tasks
 
@@ -1439,10 +1480,20 @@ def old_graph(db={}):
         cache_buf = bytearray(len(fb_buf))
         cursor = CursorState()
         tool_state = ToolState()
+        ignore_form_back_until_ms = None
 
         while True:
             _restore_default_poll()
             inp = _start_typing_with_form_idle()
+
+            if ignore_form_back_until_ms is not None:
+                if _ticks_diff(time.ticks_ms(), ignore_form_back_until_ms) < 0:
+                    if inp == "back":
+                        _restore_old_graph_navigation_entry()
+                        form_refresh.refresh(state=nav.current_state())
+                        continue
+                else:
+                    ignore_form_back_until_ms = None
 
             if inp == "back":
                 current_app[0] = "installed_apps"
@@ -1481,10 +1532,11 @@ def old_graph(db={}):
                             else:
                                 _set_fast_poll()
 
-                        key = typer.start_typing()
+                        key = _start_typing_with_navigation_fallback(consume_local_back=True)
                         if ignore_graph_back_until_ms is not None:
                             if _ticks_diff(time.ticks_ms(), ignore_graph_back_until_ms) < 0:
                                 if key == "back":
+                                    _restore_old_graph_navigation_entry()
                                     continue
                             else:
                                 ignore_graph_back_until_ms = None
@@ -1593,7 +1645,9 @@ def old_graph(db={}):
                                 current_app[1] = "root"
                                 return
                             if toolbox_action == TOOLBOX_CANCEL_BACK:
-                                ignore_graph_back_until_ms = _ticks_add(time.ticks_ms(), 180)
+                                ignore_graph_back_until_ms = _ticks_add(
+                                    time.ticks_ms(), _back_guard_duration_ms(prev_debounce)
+                                )
                             elif toolbox_action == TOOLBOX_CLEAR_SELECTION:
                                 tool_state.clear()
                                 cursor.active = False
@@ -1639,6 +1693,9 @@ def old_graph(db={}):
                             keypad_state_manager(x=key)
 
                         elif key == "back":
+                            ignore_form_back_until_ms = _ticks_add(
+                                time.ticks_ms(), _back_guard_duration_ms(prev_debounce)
+                            )
                             break
 
                         elif key == "home":
