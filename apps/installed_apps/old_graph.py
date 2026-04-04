@@ -17,6 +17,7 @@ import gc
 import math
 import utime as time  # type:ignore
 
+import process_modules.form_buffer_uploader as form_buffer_uploader_mod
 from data_modules.object_handler import (
     current_app,
     chrs,
@@ -121,6 +122,10 @@ MENU_BOX_X = 2
 MENU_BOX_Y = 11
 MENU_BOX_W = 124
 MENU_BOX_H = 44
+TOOLBOX_BOX_X = MENU_BOX_X
+TOOLBOX_BOX_Y = MENU_BOX_Y
+TOOLBOX_BOX_W = MENU_BOX_W
+TOOLBOX_BOX_H = 47
 
 
 class OldGraphFormTbf(FormTbf):
@@ -172,6 +177,265 @@ class OldGraphFormTbf(FormTbf):
             },
             force=force,
         )
+
+    def _layout_metrics(self, blocks):
+        metrics = super()._layout_metrics(blocks)
+        if not getattr(self.f_b, "old_graph_show_scrollbar", False):
+            return metrics
+        if not metrics.get("compact"):
+            return metrics
+
+        metrics = dict(metrics)
+        if getattr(self.f_b, "old_graph_window_section_focus", False):
+            uniform_h = max(metrics["row_h"], metrics["hfield_h"])
+            metrics["show_scrollbar"] = True
+            metrics["panel_h"] = form_buffer_uploader_mod.COMPACT_PANEL_H
+            metrics["content_y"] = metrics["panel_y"] + 2
+            metrics["content_h"] = max(12, metrics["panel_h"] - 4)
+            metrics["row_h"] = uniform_h
+            metrics["hfield_h"] = uniform_h
+            metrics["vfield_h"] = uniform_h
+            metrics["row_gap"] = 0
+            metrics["content_w"] = max(
+                12,
+                metrics["panel_w"] - form_buffer_uploader_mod.SCROLL_W - 6,
+            )
+            metrics["scroll_x"] = (
+                metrics["panel_x"]
+                + metrics["panel_w"]
+                - form_buffer_uploader_mod.SCROLL_W
+                - 1
+            )
+            metrics["scroll_y"] = metrics["panel_y"] + 2
+            metrics["scroll_h"] = metrics["content_h"]
+            return metrics
+
+        footer_top = form_buffer_uploader_mod.STATUS_Y
+        panel_h = max(24, footer_top - metrics["panel_y"] - 1)
+        metrics["show_scrollbar"] = True
+        metrics["panel_h"] = panel_h
+        metrics["content_h"] = max(12, panel_h - 4)
+        metrics["row_gap"] = 0
+        metrics["content_w"] = max(
+            12,
+            metrics["panel_w"] - form_buffer_uploader_mod.SCROLL_W - 6,
+        )
+        metrics["scroll_x"] = (
+            metrics["panel_x"]
+            + metrics["panel_w"]
+            - form_buffer_uploader_mod.SCROLL_W
+            - 1
+        )
+        metrics["scroll_y"] = metrics["panel_y"] + 2
+        metrics["scroll_h"] = metrics["content_h"]
+        return metrics
+
+    def _draw_compact_horizontal_field(self, field_y, block, selected, metrics):
+        if not getattr(self.f_b, "old_graph_home_tight_labels", False):
+            return super()._draw_compact_horizontal_field(field_y, block, selected, metrics)
+
+        field_y = int(field_y)
+        content_x = metrics["content_x"]
+        content_w = metrics["content_w"]
+        field_h = metrics["hfield_h"]
+        label = block.get("label", "")
+        input_active = getattr(self.f_b, "menu_cursor", -1) == block.get("input_index")
+        label_w = max(1, form_buffer_uploader_mod._text_width(label) + 1)
+        max_label_w = max(
+            1,
+            content_w - form_buffer_uploader_mod.COMPACT_HFIELD_MIN_INPUT_W,
+        )
+        if label_w > max_label_w:
+            label_w = max_label_w
+
+        input_x = content_x + label_w + 1
+        input_w = max(
+            form_buffer_uploader_mod.COMPACT_HFIELD_MIN_INPUT_W,
+            content_w - label_w - 1,
+        )
+        input_y = field_y + form_buffer_uploader_mod.COMPACT_HFIELD_INPUT_Y_OFFSET
+        input_h = min(
+            field_h,
+            max(8, form_buffer_uploader_mod.COMPACT_HFIELD_INPUT_H),
+        )
+        text_x = input_x + form_buffer_uploader_mod.COMPACT_HFIELD_INPUT_INSET_X
+        text_max_w = max(
+            6,
+            input_w
+            - (
+                form_buffer_uploader_mod.COMPACT_HFIELD_INPUT_INSET_X
+                + form_buffer_uploader_mod.COMPACT_HFIELD_INPUT_RIGHT_PAD
+            ),
+        )
+        view = self._input_view(
+            block,
+            input_active,
+            visible_chars=form_buffer_uploader_mod._max_chars_for_width(text_max_w),
+        )
+
+        if selected:
+            self._fill_rect(content_x, field_y, label_w, field_h, 1)
+
+        self._draw_text_in_rect(
+            label,
+            content_x,
+            field_y + form_buffer_uploader_mod.COMPACT_HFIELD_LABEL_PAD_Y,
+            label_w,
+            max(1, field_h - form_buffer_uploader_mod.COMPACT_HFIELD_LABEL_PAD_Y),
+            color=0 if selected else 1,
+            align="left",
+        )
+
+        if form_buffer_uploader_mod.COMPACT_HFIELD_INPUT_RADIUS > 0:
+            self._rounded_rect(
+                input_x,
+                input_y,
+                input_w,
+                input_h,
+                color=1,
+                fill=False,
+                radius=form_buffer_uploader_mod.COMPACT_HFIELD_INPUT_RADIUS,
+            )
+        else:
+            self._rect(input_x, input_y, input_w, input_h, 1)
+        self._draw_text(
+            view["visible_text"],
+            text_x,
+            input_y
+            + max(0, (input_h - form_buffer_uploader_mod.CHAR_HEIGHT) // 2),
+            color=1,
+            max_width=text_max_w,
+        )
+
+        if input_active and self._cursor_visible:
+            visible_cursor = self.f_b.inp_cursor() - view["display_pos"]
+            if visible_cursor < 0:
+                visible_cursor = 0
+            if visible_cursor > view["visible_chars"]:
+                visible_cursor = view["visible_chars"]
+            cursor_x = min(
+                input_x + input_w - form_buffer_uploader_mod.COMPACT_HFIELD_CURSOR_RIGHT_PAD,
+                text_x + visible_cursor * form_buffer_uploader_mod.CHAR_ADVANCE,
+            )
+            self._draw_input_cursor(cursor_x, input_y, input_h)
+
+        if view["has_overflow"]:
+            self._draw_horizontal_scrollbar(
+                input_x + form_buffer_uploader_mod.COMPACT_HFIELD_SCROLL_INSET_X,
+                input_y + input_h - 2,
+                max(
+                    8,
+                    input_w
+                    - (
+                        form_buffer_uploader_mod.COMPACT_HFIELD_SCROLL_INSET_X
+                        + form_buffer_uploader_mod.COMPACT_HFIELD_SCROLL_RIGHT_PAD
+                    ),
+                ),
+                max(view["visible_chars"], len(view["value_text"])),
+                view["visible_chars"],
+                view["display_pos"],
+                color=1,
+        )
+
+    def _draw_boxed_row(self, row_y, text_value, selected, metrics):
+        if not getattr(self.f_b, "old_graph_window_section_focus", False):
+            return super()._draw_boxed_row(row_y, text_value, selected, metrics)
+
+        text_value = str(text_value or "")
+        if text_value not in ("RECT System", "POLAR System"):
+            return super()._draw_boxed_row(row_y, text_value, selected, metrics)
+
+        row_y = int(row_y)
+        content_x = metrics["content_x"]
+        content_w = metrics["content_w"]
+        row_h = metrics["row_h"]
+
+        self._fill_rect(content_x, row_y, content_w, row_h, 0)
+        self._rect(content_x, row_y, content_w, row_h, 1)
+        self._draw_text_in_rect(
+            self._row_text_value(
+                text_value,
+                content_w - (form_buffer_uploader_mod.COMPACT_ROW_TEXT_PAD_X * 2),
+                selected=False,
+            ),
+            content_x + form_buffer_uploader_mod.COMPACT_ROW_TEXT_PAD_X,
+            row_y + 2,
+            content_w - (form_buffer_uploader_mod.COMPACT_ROW_TEXT_PAD_X * 2),
+            max(1, row_h - 2),
+            color=1,
+            align="left",
+        )
+
+    def _refresh_boxed(self, state="", force=False):
+        if not getattr(self.f_b, "old_graph_window_section_focus", False):
+            return super()._refresh_boxed(state=state, force=force)
+
+        self._sync_blink_signature()
+        state = self._normalized_state(state)
+        blocks = self._boxed_blocks()
+        metrics = self._layout_metrics(blocks)
+        selected_index = self._selected_block_index(blocks)
+        top_index, bottom_index = self._visible_block_window(blocks, selected_index, metrics)
+
+        self._clear()
+        if metrics.get("show_title"):
+            self._draw_text_center(self._title_text(), form_buffer_uploader_mod.TITLE_Y, color=1)
+        self._rect(
+            metrics["panel_x"],
+            metrics["panel_y"],
+            metrics["panel_w"],
+            metrics["panel_h"],
+            1,
+        )
+
+        visible_blocks = blocks[top_index:bottom_index]
+        used_h = 0
+        for block in visible_blocks:
+            used_h += self._block_height(block, metrics)
+
+        gap_count = max(1, len(visible_blocks) + 1)
+        extra_h = max(0, metrics["content_h"] - used_h)
+        base_gap = extra_h // gap_count
+        remainder = extra_h % gap_count
+        gap_sizes = [
+            base_gap + (1 if gap_index < remainder else 0)
+            for gap_index in range(gap_count)
+        ]
+
+        current_y = metrics["content_y"] + gap_sizes[0]
+        for local_index, block in enumerate(visible_blocks):
+            block_index = top_index + local_index
+            selected = block_index == selected_index
+            block_type = block.get("type")
+            if block_type == "field":
+                self._draw_boxed_field(current_y, block, selected, metrics)
+            elif block_type == "link":
+                self._draw_link_row(current_y, block, selected, metrics)
+            elif block_type == "button":
+                self._draw_button_row(current_y, block, selected, metrics)
+            else:
+                self._draw_boxed_row(current_y, block.get("text", ""), selected, metrics)
+            current_y += self._block_height(block, metrics)
+            if local_index + 1 < len(visible_blocks):
+                current_y += gap_sizes[local_index + 1]
+
+        self._draw_vertical_scrollbar(metrics, len(blocks), top_index, bottom_index - top_index)
+        if state != "":
+            self._draw_footer(state=state)
+        self._flush(force=force)
+
+        if self.nav is not None:
+            nav_overlay_visible = (
+                state != ""
+                and state == self.nav.current_state()
+                and self.nav.is_visible()
+            )
+            self.nav.set_restore_callback(
+                self.restore_bottom_row if nav_overlay_visible else None
+            )
+
+        self.last_state = state
+
 MENU_VISIBLE_ROWS = 3
 MENU_SCROLL_W = 4
 MENU_ROW_X = MENU_BOX_X + 2
@@ -180,6 +444,12 @@ MENU_ROW_W = MENU_BOX_W - MENU_SCROLL_W - 5
 MENU_ROW_H = 13
 MENU_ROW_GAP = 1
 MENU_CHECKBOX_SIZE = 7
+TOOLBOX_VISIBLE_ROWS = 4
+TOOLBOX_ROW_X = TOOLBOX_BOX_X + 2
+TOOLBOX_ROW_Y = TOOLBOX_BOX_Y + 2
+TOOLBOX_ROW_W = TOOLBOX_BOX_W - MENU_SCROLL_W - 5
+TOOLBOX_ROW_H = 10
+TOOLBOX_ROW_GAP = 1
 
 # Reused tiny buffers for partial column updates.
 _CURSOR_COL_BUF_A = bytearray(PLOT_PAGES)
@@ -297,7 +567,7 @@ TOOLBOX_CANCEL_BACK = "__toolbox_cancel_back__"
 TOOLBOX_CLEAR_SELECTION = "__toolbox_clear_selection__"
 
 MAX_GRAPH_COUNT = 10
-HOME_INPUT_COLS = 14
+HOME_INPUT_COLS = 16
 HOME_HFIELD_LABEL_W = 15
 HOME_HFIELD_LABEL_PAD_X = 0
 
@@ -335,6 +605,22 @@ GRAPH_STYLE_ICONS = {
 HOME_TOOLBOX_TYPE_ROW = 0
 HOME_TOOLBOX_STYLE_ROW = 1
 HOME_TOOLBOX_WINDOW_ROW = 2
+GRAPH_CONFIG_BOX_X = 2
+GRAPH_CONFIG_BOX_Y = 9
+GRAPH_CONFIG_BOX_W = 124
+GRAPH_CONFIG_BOX_H = 54
+GRAPH_CONFIG_CONTENT_X = GRAPH_CONFIG_BOX_X + 2
+GRAPH_CONFIG_CONTENT_Y = GRAPH_CONFIG_BOX_Y + 2
+GRAPH_CONFIG_CONTENT_W = GRAPH_CONFIG_BOX_W - 4
+GRAPH_CONFIG_LABEL_H = 8
+GRAPH_CONFIG_VALUE_H = 8
+GRAPH_CONFIG_LABEL_VALUE_GAP = 2
+GRAPH_CONFIG_PAIR_H = (
+    GRAPH_CONFIG_LABEL_H + GRAPH_CONFIG_LABEL_VALUE_GAP + GRAPH_CONFIG_VALUE_H
+)
+GRAPH_CONFIG_VIEW_H = 8
+GRAPH_CONFIG_OUTER_GAP = 1
+GRAPH_CONFIG_ITEM_GAP = 2
 
 
 def _graph_input_key(index):
@@ -413,6 +699,12 @@ def _capture_form_state():
         "compact_hfield_label_w": getattr(form, "compact_hfield_label_w", None),
         "compact_hfield_label_pad_x_present": hasattr(form, "compact_hfield_label_pad_x"),
         "compact_hfield_label_pad_x": getattr(form, "compact_hfield_label_pad_x", None),
+        "old_graph_home_tight_labels_present": hasattr(form, "old_graph_home_tight_labels"),
+        "old_graph_home_tight_labels": getattr(form, "old_graph_home_tight_labels", None),
+        "old_graph_window_section_focus_present": hasattr(form, "old_graph_window_section_focus"),
+        "old_graph_window_section_focus": getattr(form, "old_graph_window_section_focus", None),
+        "old_graph_show_scrollbar_present": hasattr(form, "old_graph_show_scrollbar"),
+        "old_graph_show_scrollbar": getattr(form, "old_graph_show_scrollbar", None),
         "bottom_page_text_provider_present": hasattr(form, "bottom_page_text_provider"),
         "bottom_page_text_provider": getattr(form, "bottom_page_text_provider", None),
         "form_list": list(getattr(form, "form_list", [])),
@@ -437,6 +729,18 @@ def _restore_form_state(previous):
         form.compact_hfield_label_pad_x = previous.get("compact_hfield_label_pad_x")
     elif hasattr(form, "compact_hfield_label_pad_x"):
         delattr(form, "compact_hfield_label_pad_x")
+    if previous.get("old_graph_home_tight_labels_present"):
+        form.old_graph_home_tight_labels = previous.get("old_graph_home_tight_labels")
+    elif hasattr(form, "old_graph_home_tight_labels"):
+        delattr(form, "old_graph_home_tight_labels")
+    if previous.get("old_graph_window_section_focus_present"):
+        form.old_graph_window_section_focus = previous.get("old_graph_window_section_focus")
+    elif hasattr(form, "old_graph_window_section_focus"):
+        delattr(form, "old_graph_window_section_focus")
+    if previous.get("old_graph_show_scrollbar_present"):
+        form.old_graph_show_scrollbar = previous.get("old_graph_show_scrollbar")
+    elif hasattr(form, "old_graph_show_scrollbar"):
+        delattr(form, "old_graph_show_scrollbar")
     if previous.get("bottom_page_text_provider_present"):
         form.bottom_page_text_provider = previous.get("bottom_page_text_provider")
     elif hasattr(form, "bottom_page_text_provider"):
@@ -484,6 +788,10 @@ def _apply_home_form(graph_state):
     form.input_cols = HOME_INPUT_COLS
     form.compact_hfield_label_w = HOME_HFIELD_LABEL_W
     form.compact_hfield_label_pad_x = HOME_HFIELD_LABEL_PAD_X
+    form.old_graph_home_tight_labels = True
+    if hasattr(form, "old_graph_window_section_focus"):
+        delattr(form, "old_graph_window_section_focus")
+    form.old_graph_show_scrollbar = True
     if hasattr(form, "bottom_page_text_provider"):
         delattr(form, "bottom_page_text_provider")
 
@@ -1561,6 +1869,12 @@ def _draw_menu_shell(fb, title):
     fb.rect(MENU_BOX_X, MENU_BOX_Y, MENU_BOX_W, MENU_BOX_H, 1)
 
 
+def _draw_toolbox_shell(fb, title):
+    fb.fill(0)
+    _draw_menu_title(fb, title)
+    fb.rect(TOOLBOX_BOX_X, TOOLBOX_BOX_Y, TOOLBOX_BOX_W, TOOLBOX_BOX_H, 1)
+
+
 def _draw_menu_scrollbar(fb, item_count, top_index, visible_rows=MENU_VISIBLE_ROWS):
     track_x = MENU_BOX_X + MENU_BOX_W - MENU_SCROLL_W - 1
     track_y = MENU_BOX_Y + 2
@@ -1580,6 +1894,25 @@ def _draw_menu_scrollbar(fb, item_count, top_index, visible_rows=MENU_VISIBLE_RO
     fb.fill_rect(track_x + 1, thumb_y, max(1, MENU_SCROLL_W - 2), thumb_h, 1)
 
 
+def _draw_toolbox_scrollbar(fb, item_count, top_index):
+    track_x = TOOLBOX_BOX_X + TOOLBOX_BOX_W - MENU_SCROLL_W - 1
+    track_y = TOOLBOX_BOX_Y + 2
+    track_h = TOOLBOX_BOX_H - 4
+
+    fb.rect(track_x, track_y, MENU_SCROLL_W, track_h, 1)
+
+    if item_count <= TOOLBOX_VISIBLE_ROWS:
+        thumb_h = track_h - 2
+        thumb_y = track_y + 1
+    else:
+        thumb_h = max(8, ((track_h - 2) * TOOLBOX_VISIBLE_ROWS) // item_count)
+        max_top = item_count - TOOLBOX_VISIBLE_ROWS
+        thumb_range = max(0, (track_h - 2) - thumb_h)
+        thumb_y = track_y + 1 + (top_index * thumb_range // max_top)
+
+    fb.fill_rect(track_x + 1, thumb_y, max(1, MENU_SCROLL_W - 2), thumb_h, 1)
+
+
 def _draw_checkbox(fb, x, y, checked, color):
     color = 1 if color else 0
     fb.rect(x, y, MENU_CHECKBOX_SIZE, MENU_CHECKBOX_SIZE, color)
@@ -1588,31 +1921,35 @@ def _draw_checkbox(fb, x, y, checked, color):
 
 
 def _draw_toolbox_row(fb, row_index, label, selected, checked):
-    row_y = MENU_ROW_Y + row_index * (MENU_ROW_H + MENU_ROW_GAP)
+    row_y = TOOLBOX_ROW_Y + row_index * (TOOLBOX_ROW_H + TOOLBOX_ROW_GAP)
     row_fill = 1 if selected else 0
     text_color = 0 if selected else 1
     checkbox_color = 0 if selected else 1
 
-    fb.fill_rect(MENU_ROW_X, row_y, MENU_ROW_W, MENU_ROW_H, row_fill)
-    fb.rect(MENU_ROW_X, row_y, MENU_ROW_W, MENU_ROW_H, 1)
+    fb.fill_rect(TOOLBOX_ROW_X, row_y, TOOLBOX_ROW_W, TOOLBOX_ROW_H, row_fill)
+    fb.rect(TOOLBOX_ROW_X, row_y, TOOLBOX_ROW_W, TOOLBOX_ROW_H, 1)
 
-    checkbox_x = MENU_ROW_X + 2
-    checkbox_y = row_y + max(0, (MENU_ROW_H - MENU_CHECKBOX_SIZE) // 2)
+    checkbox_x = TOOLBOX_ROW_X + 2
+    checkbox_y = row_y + max(0, (TOOLBOX_ROW_H - MENU_CHECKBOX_SIZE) // 2)
     _draw_checkbox(fb, checkbox_x, checkbox_y, checked, checkbox_color)
 
     label_x = checkbox_x + MENU_CHECKBOX_SIZE + 4
-    label_y = row_y + 2
-    max_width = MENU_ROW_W - (label_x - MENU_ROW_X) - 2
+    label_y = row_y + 1
+    max_width = TOOLBOX_ROW_W - (label_x - TOOLBOX_ROW_X) - 2
     _draw_ui_text(fb, label, label_x, label_y, text_color, max_width=max_width)
 
 
 def _draw_toolbox_menu(fb, fb_buf, selected_mode, tool_state):
-    _draw_menu_shell(fb, "Toolbox")
+    _draw_toolbox_shell(fb, "Toolbox")
     active_mode = tool_state.mode
     selected_index = TOOL_MENU_ITEMS.index(selected_mode)
-    top_index = _menu_top_index(len(TOOL_MENU_ITEMS), selected_index)
+    top_index = _menu_top_index(
+        len(TOOL_MENU_ITEMS),
+        selected_index,
+        visible_rows=TOOLBOX_VISIBLE_ROWS,
+    )
 
-    for row_index in range(MENU_VISIBLE_ROWS):
+    for row_index in range(TOOLBOX_VISIBLE_ROWS):
         item_index = top_index + row_index
         if item_index >= len(TOOL_MENU_ITEMS):
             break
@@ -1626,7 +1963,7 @@ def _draw_toolbox_menu(fb, fb_buf, selected_mode, tool_state):
             checked=(mode == active_mode),
         )
 
-    _draw_menu_scrollbar(fb, len(TOOL_MENU_ITEMS), top_index)
+    _draw_toolbox_scrollbar(fb, len(TOOL_MENU_ITEMS), top_index)
     _display_full(fb_buf)
 
 
@@ -1746,46 +2083,114 @@ def _open_used_tools_menu(fb, fb_buf, tool_state, bounds):
             keypad_state_manager(x=key)
 
 
-def _draw_graph_config_row(fb, row_index, text_value, selected):
-    row_x = MENU_BOX_X + 2
-    row_y = MENU_ROW_Y + row_index * (MENU_ROW_H + MENU_ROW_GAP)
-    row_w = MENU_BOX_W - 4
-    row_fill = 1 if selected else 0
-    text_color = 0 if selected else 1
+def _draw_graph_config_shell(fb, title):
+    fb.fill(0)
+    _draw_menu_title(fb, title)
+    fb.rect(
+        GRAPH_CONFIG_BOX_X,
+        GRAPH_CONFIG_BOX_Y,
+        GRAPH_CONFIG_BOX_W,
+        GRAPH_CONFIG_BOX_H,
+        1,
+    )
 
-    fb.fill_rect(row_x, row_y, row_w, MENU_ROW_H, row_fill)
-    fb.rect(row_x, row_y, row_w, MENU_ROW_H, 1)
+
+def _draw_graph_config_focus_text(fb, text_value, x, y, max_width=None):
+    text_value = _display_text(text_value)
+    if max_width is not None:
+        text_value = _clip_text_px(text_value, max_width)
+    text_w = _text_width(text_value)
+    fill_x = max(0, int(x) - 1)
+    fill_y = max(0, int(y) - 1)
+    fill_w = min(DISPLAY_WIDTH - fill_x, text_w + 2)
+    fill_h = min(DISPLAY_HEIGHT - fill_y, CHAR_HEIGHT + 1)
+    if fill_w > 0:
+        fb.fill_rect(fill_x, fill_y, fill_w, fill_h, 1)
+    _draw_ui_text(fb, text_value, x, y, 0, max_width=max_width)
+
+
+def _draw_graph_config_pair(fb, top_y, label_text, value_text, selected):
+    value_y = top_y + GRAPH_CONFIG_LABEL_H + GRAPH_CONFIG_LABEL_VALUE_GAP
+
     _draw_ui_text(
         fb,
-        text_value,
-        row_x + 3,
-        row_y + 2,
-        text_color,
-        max_width=row_w - 6,
+        label_text,
+        GRAPH_CONFIG_CONTENT_X + 3,
+        top_y,
+        1,
+        max_width=GRAPH_CONFIG_CONTENT_W - 6,
     )
+
+    centered_x = GRAPH_CONFIG_CONTENT_X + max(
+        0,
+        (GRAPH_CONFIG_CONTENT_W - _text_width(value_text)) // 2,
+    )
+    if selected:
+        _draw_graph_config_focus_text(
+            fb,
+            value_text,
+            centered_x,
+            value_y,
+            max_width=GRAPH_CONFIG_CONTENT_W - 4,
+        )
+    else:
+        _draw_ui_text(
+            fb,
+            value_text,
+            centered_x,
+            value_y,
+            1,
+            max_width=GRAPH_CONFIG_CONTENT_W - 4,
+        )
+
+
+def _draw_graph_config_link_row(fb, top_y, text_value, selected):
+    text_x = GRAPH_CONFIG_CONTENT_X + 3
+    text_y = top_y
+    if selected:
+        _draw_graph_config_focus_text(
+            fb,
+            text_value,
+            text_x,
+            text_y,
+            max_width=GRAPH_CONFIG_CONTENT_W - 6,
+        )
+    else:
+        _draw_ui_text(
+            fb,
+            text_value,
+            text_x,
+            text_y,
+            1,
+            max_width=GRAPH_CONFIG_CONTENT_W - 6,
+        )
 
 
 def _draw_graph_config_menu(fb, fb_buf, graph_index, graph_config):
-    _draw_menu_shell(fb, _graph_label(graph_index))
-    _draw_graph_config_row(
+    _draw_graph_config_shell(fb, _graph_label(graph_index))
+    top_y = GRAPH_CONFIG_CONTENT_Y + GRAPH_CONFIG_OUTER_GAP
+    _draw_graph_config_pair(
         fb,
-        0,
-        "Graph Type : <" + GRAPH_TYPE_LABELS.get(graph_config["type"], "RECT") + ">",
+        top_y,
+        "Graph Type",
+        "<" + GRAPH_TYPE_LABELS.get(graph_config["type"], "RECT") + ">",
         graph_config.get("_selected_row", 0) == HOME_TOOLBOX_TYPE_ROW,
     )
-    _draw_graph_config_row(
+    top_y += GRAPH_CONFIG_PAIR_H + GRAPH_CONFIG_ITEM_GAP
+    _draw_graph_config_pair(
         fb,
-        1,
-        "Graph Style: <" + GRAPH_STYLE_LABELS.get(graph_config["style"], "NORMAL") + ">",
+        top_y,
+        "Graph Style",
+        "<" + GRAPH_STYLE_LABELS.get(graph_config["style"], "NORMAL") + ">",
         graph_config.get("_selected_row", 0) == HOME_TOOLBOX_STYLE_ROW,
     )
-    _draw_graph_config_row(
+    top_y += GRAPH_CONFIG_PAIR_H + GRAPH_CONFIG_ITEM_GAP
+    _draw_graph_config_link_row(
         fb,
-        2,
+        top_y,
         "View Window >",
         graph_config.get("_selected_row", 0) == HOME_TOOLBOX_WINDOW_ROW,
     )
-    fb.text("OK=save", 42, 56, 1)
     _display_full(fb_buf)
 
 
@@ -1795,6 +2200,9 @@ def _configure_view_window_form(rect_bounds, polar_bounds):
     form.blink_cursor = True
     form.title = ""
     form.input_cols = HOME_INPUT_COLS
+    form.old_graph_home_tight_labels = True
+    form.old_graph_window_section_focus = True
+    form.old_graph_show_scrollbar = True
     if hasattr(form, "compact_hfield_label_w"):
         delattr(form, "compact_hfield_label_w")
     if hasattr(form, "compact_hfield_label_pad_x"):
@@ -1858,7 +2266,11 @@ def _parse_window_form_values():
 
 def _edit_view_window(rect_bounds, polar_bounds):
     previous_form = _capture_form_state()
-    status_text = ["OK=save"]
+    status_text = [""]
+    last_valid = [
+        _copy_bounds_dict(rect_bounds),
+        _copy_polar_bounds(polar_bounds),
+    ]
 
     def _refresh_window_form():
         _set_home_footer_steady(False)
@@ -1866,6 +2278,15 @@ def _edit_view_window(rect_bounds, polar_bounds):
 
     def _start_typing_with_window_idle():
         return _start_typing_with_navigation_fallback(consume_local_back=True)
+
+    def _update_last_valid():
+        try:
+            parsed_rect, parsed_polar = _parse_window_form_values()
+        except Exception:
+            return False
+        last_valid[0] = parsed_rect
+        last_valid[1] = parsed_polar
+        return True
 
     try:
         _configure_view_window_form(rect_bounds, polar_bounds)
@@ -1875,16 +2296,16 @@ def _edit_view_window(rect_bounds, polar_bounds):
         while True:
             key = _start_typing_with_window_idle()
             if key in ("ok", "exe"):
-                try:
-                    parsed = _parse_window_form_values()
-                except Exception:
+                if not _update_last_valid():
                     status_text[0] = "INPUT ERROR"
                     _refresh_window_form()
                     continue
-                status_text[0] = "OK=save"
-                return parsed
+                status_text[0] = ""
+                return last_valid[0], last_valid[1]
             if key in ("back", "toolbox"):
-                return None
+                _update_last_valid()
+                status_text[0] = ""
+                return last_valid[0], last_valid[1]
             if key == "home":
                 return "home"
             if key in ("alpha", "beta"):
@@ -1892,8 +2313,8 @@ def _edit_view_window(rect_bounds, polar_bounds):
                 form.update_buffer("")
             else:
                 form.update_buffer(key)
-            if status_text[0] != "OK=save":
-                status_text[0] = "OK=save"
+            if _update_last_valid():
+                status_text[0] = ""
             _refresh_window_form()
     finally:
         _restore_form_state(previous_form)
@@ -1909,6 +2330,12 @@ def _open_graph_config_menu(fb, fb_buf, graph_state, graph_index):
     temp_rect = _copy_bounds_dict(graph_state["rect_bounds"])
     temp_polar = _copy_polar_bounds(graph_state["polar_bounds"])
     ignore_open_key = True
+
+    def _commit_graph_config():
+        graph["type"] = temp_graph["type"]
+        graph["style"] = temp_graph["style"]
+        graph_state["rect_bounds"] = _copy_bounds_dict(temp_rect)
+        graph_state["polar_bounds"] = _copy_polar_bounds(temp_polar)
 
     while True:
         _draw_graph_config_menu(fb, fb_buf, graph_index, temp_graph)
@@ -1926,13 +2353,17 @@ def _open_graph_config_menu(fb, fb_buf, graph_state, graph_index):
         elif key == "nav_l":
             if temp_graph["_selected_row"] == HOME_TOOLBOX_TYPE_ROW:
                 temp_graph["type"] = _cycle_sequence_value(GRAPH_TYPES, temp_graph["type"], -1)
+                _commit_graph_config()
             elif temp_graph["_selected_row"] == HOME_TOOLBOX_STYLE_ROW:
                 temp_graph["style"] = _cycle_sequence_value(GRAPH_STYLES, temp_graph["style"], -1)
+                _commit_graph_config()
         elif key == "nav_r":
             if temp_graph["_selected_row"] == HOME_TOOLBOX_TYPE_ROW:
                 temp_graph["type"] = _cycle_sequence_value(GRAPH_TYPES, temp_graph["type"], 1)
+                _commit_graph_config()
             elif temp_graph["_selected_row"] == HOME_TOOLBOX_STYLE_ROW:
                 temp_graph["style"] = _cycle_sequence_value(GRAPH_STYLES, temp_graph["style"], 1)
+                _commit_graph_config()
         elif key in ("ok", "exe"):
             if temp_graph["_selected_row"] == HOME_TOOLBOX_WINDOW_ROW:
                 view_window = _edit_view_window(temp_rect, temp_polar)
@@ -1941,11 +2372,9 @@ def _open_graph_config_menu(fb, fb_buf, graph_state, graph_index):
                 if view_window is None:
                     continue
                 temp_rect, temp_polar = view_window
+                _commit_graph_config()
             else:
-                graph["type"] = temp_graph["type"]
-                graph["style"] = temp_graph["style"]
-                graph_state["rect_bounds"] = _copy_bounds_dict(temp_rect)
-                graph_state["polar_bounds"] = _copy_polar_bounds(temp_polar)
+                _commit_graph_config()
                 return True
         elif key in ("back", "toolbox"):
             return False
