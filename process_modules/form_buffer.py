@@ -11,6 +11,8 @@ except Exception:
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
+from data_modules.math_symbols import normalize_pi_token
+
 
 class Form:
     def __init__(
@@ -350,6 +352,8 @@ class Form:
     def _edit_active_input(self, active_key, inp):
         if active_key is None:
             return
+
+        inp = normalize_pi_token(inp)
 
         visible_cols = self._active_input_cols()
         current_value = str(self.input_list.get(active_key, " ") or " ")

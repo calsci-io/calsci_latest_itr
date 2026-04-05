@@ -20,6 +20,7 @@ from data_modules.object_handler import (
     nav,
     typer,
 )
+from data_modules.math_symbols import PI_CHAR, normalize_expression
 
 
 DISPLAY_WIDTH = 128
@@ -290,6 +291,7 @@ EVAL_GLOBALS = {
     "radians": math.radians,
     "degrees": math.degrees,
     "pi": math.pi,
+    PI_CHAR: math.pi,
     "e": math.e,
 }
 for _name in ("asinh", "acosh", "atanh"):
@@ -298,11 +300,11 @@ for _name in ("asinh", "acosh", "atanh"):
 
 
 def _clean_expr(value):
-    return str(value or "").strip()
+    return normalize_expression(value).strip()
 
 
 def _eval_number(text_value):
-    value = eval(str(text_value or "0"), EVAL_GLOBALS)
+    value = eval(_clean_expr(text_value) or "0", EVAL_GLOBALS)
     if isinstance(value, complex):
         raise ValueError("complex value not supported")
     return float(value)
@@ -436,10 +438,10 @@ def format_number(value):
         if multiple == 0:
             return "0 "
         if multiple == 1:
-            return "pi "
+            return PI_CHAR + " "
         if multiple == -1:
-            return "-pi "
-        return str(multiple) + "*pi "
+            return "-" + PI_CHAR + " "
+        return str(multiple) + "*" + PI_CHAR + " "
     abs_v = abs(value)
     if abs_v < 0.01:
         return "0 "

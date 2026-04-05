@@ -10,6 +10,8 @@ except Exception:
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
+from data_modules.math_symbols import normalize_pi_token
+
 class Textbuffer:
     def __init__(self, text_buffer="𖤓", rows=8, cols=21):
         if text_buffer != "𖤓":
@@ -86,6 +88,7 @@ class Textbuffer:
         return new_rows_list
 
     def update_buffer(self, text):
+        text = normalize_pi_token(text)
         self.ac = False
         self.refresh_area = (0, self.rows * self.cols)
         past_buffer_cursor = self.menu_buffer_cursor

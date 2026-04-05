@@ -10,13 +10,15 @@ except Exception:
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
+from data_modules.math_symbols import PI_CHAR
+
 class Keypad_5X8:
     def __init__(self, state="d"):
         keypad_5X8_layout_default=[
             ["on", "home", "settings", "back", "lock"],
             ["beta", "alpha", "toolbox", "fraction", "F1"],
             ["nav_l", "nav_d", "nav_r", "ok", "nav_u"],
-            ["pi", "log", "sin", "cos", "tan"],
+            [PI_CHAR, "log", "sin", "cos", "tan"],
             ["pow", "root", ",", "(", ")"],
             ["F2", "F3", "F4", "F5", "F6"],
             ["7", "8", "9", "nav_b", "AC"],

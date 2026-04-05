@@ -20,6 +20,7 @@ class NavigationRequest(BaseException):
 
 _home_target = ("home", "root")
 _stack = [_home_target]
+_pending_menu_restore_targets = set()
 
 
 def _target_tuple(app_name, group_name):
@@ -29,7 +30,7 @@ def _target_tuple(app_name, group_name):
 def register_app_entry(app_name, group_name):
     target = _target_tuple(app_name, group_name)
     if target == _home_target:
-        reset_to_home()
+        _stack[:] = [_home_target]
         return
     if not _stack:
         _stack.append(_home_target)
@@ -40,8 +41,10 @@ def register_app_entry(app_name, group_name):
         del _stack[:-50]
 
 
-def reset_to_home():
+def reset_to_home(clear_restore=True):
     _stack[:] = [_home_target]
+    if clear_restore:
+        _pending_menu_restore_targets.clear()
 
 
 def _back_target():
@@ -51,14 +54,28 @@ def _back_target():
     return _stack[-1]
 
 
+def mark_menu_restore_target(app_name, group_name):
+    _pending_menu_restore_targets.add(_target_tuple(app_name, group_name))
+
+
+def consume_menu_restore_target(app_name, group_name):
+    target = _target_tuple(app_name, group_name)
+    if target in _pending_menu_restore_targets:
+        _pending_menu_restore_targets.discard(target)
+        return True
+    return False
+
+
 def request_navigation_from_key(key):
     if key == "home":
         reset_to_home()
         raise NavigationRequest(_home_target[0], _home_target[1])
 
     if key == "settings":
+        _pending_menu_restore_targets.clear()
         raise NavigationRequest("settings", "root")
 
     if key == "back":
         target = _back_target()
+        mark_menu_restore_target(target[0], target[1])
         raise NavigationRequest(target[0], target[1])

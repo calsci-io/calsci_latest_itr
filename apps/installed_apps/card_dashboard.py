@@ -17,6 +17,7 @@ import machine
 import utime as time  # type: ignore
 
 from apps.installed_apps._mono_ui import MonoCanvas, clip_text, clip_text_px
+from data_modules.math_symbols import PI_CHAR
 from data_modules.object_handler import keyin, keymap, keypad_state_manager_reset
 from process_modules import boot_up_data_update
 from process_modules.navigation import request_navigation_from_key
@@ -664,6 +665,7 @@ class _CardDashboard:
             return
 
         if token in (
+            PI_CHAR,
             "pi",
             "log",
             "sin",

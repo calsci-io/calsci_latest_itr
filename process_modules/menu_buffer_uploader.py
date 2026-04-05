@@ -132,6 +132,8 @@ class Tbf:
     def _normalize_cursor(self, items):
         if not items:
             self.m_b.menu_cursor = 0
+            if hasattr(self.m_b, "menu_display_position"):
+                self.m_b.menu_display_position = 0
             if hasattr(self.m_b, "display_cursor"):
                 self.m_b.display_cursor = 0
             return 0
@@ -141,9 +143,26 @@ class Tbf:
         elif self.m_b.menu_cursor >= len(items):
             self.m_b.menu_cursor = len(items) - 1
 
-        if hasattr(self.m_b, "display_cursor"):
-            self.m_b.display_cursor = self.m_b.menu_cursor
         return self.m_b.menu_cursor
+
+    def _visible_window(self, item_count, selected_index):
+        if item_count <= VISIBLE_ROWS:
+            top_index = 0
+        else:
+            max_top = item_count - VISIBLE_ROWS
+            try:
+                top_index = int(getattr(self.m_b, "menu_display_position", 0) or 0)
+            except Exception:
+                top_index = 0
+            top_index = min(max(0, top_index), max_top)
+            if selected_index < top_index or selected_index >= top_index + VISIBLE_ROWS:
+                top_index = self._top_index(item_count, selected_index)
+
+        if hasattr(self.m_b, "menu_display_position"):
+            self.m_b.menu_display_position = top_index
+        if hasattr(self.m_b, "display_cursor"):
+            self.m_b.display_cursor = selected_index - top_index
+        return top_index
 
     def _top_index(self, item_count, selected_index):
         if item_count <= VISIBLE_ROWS:
@@ -259,7 +278,7 @@ class Tbf:
 
         items = [_display_text(item) for item in getattr(self.m_b, "menu_list", [])]
         selected_index = self._normalize_cursor(items)
-        top_index = self._top_index(len(items), selected_index)
+        top_index = self._visible_window(len(items), selected_index)
         state = str(state or "")
 
         self._clear()

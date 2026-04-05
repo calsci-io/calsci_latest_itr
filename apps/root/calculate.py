@@ -1,5 +1,15 @@
 import st7565 as _display_driver
 try:
+    import json
+except Exception:
+    json = None
+
+try:
+    import os
+except Exception:
+    os = None
+
+try:
     import time as _time
 except Exception:
     _time = None
@@ -29,6 +39,7 @@ from apps.installed_apps._mono_ui import (
 )
 from data_modules.characters import Characters
 from data_modules.db_instance import fun_db
+from data_modules.math_symbols import PI_CHAR, normalize_expression, normalize_pi_token
 from data_modules.object_handler import (
     app,
     data_bucket,
@@ -66,6 +77,7 @@ _CURSOR_THICKNESS = 2
 _CURSOR_BLINK_MS = 450
 _EDITOR_BUCKET_KEY = "_calculate_editor"
 _PENDING_BUCKET_KEY = "_calculate_pending_action"
+_CALCULATE_STATE_PATHS = ("/db/calculate_state.json", "db/calculate_state.json")
 _MODE_STATE_UPDATE = object()
 _AUTO_CALL_TOKENS = {
     "sin": 1,
@@ -75,6 +87,7 @@ _AUTO_CALL_TOKENS = {
     "acos": 1,
     "atan": 1,
 }
+_calculate_state_cache = None
 
 
 def _ticks_ms():
@@ -96,7 +109,7 @@ def _ticks_ms():
 
 def build_function(func_def, safe_globals):
     vars_ = func_def["variables"]
-    expr = func_def["expression"]
+    expr = normalize_expression(func_def["expression"])
 
     def generated_function(*args):
         if len(args) != len(vars_):
@@ -156,6 +169,7 @@ _BASE_SAFE_GLOBALS = {
     "isnan": isnan,
     "e": e,
     "pi": pi,
+    PI_CHAR: pi,
 }
 
 SAFE_GLOBALS = {}
@@ -294,6 +308,8 @@ def _is_wordlike_token(text):
     if text == "":
         return False
     for char in text:
+        if char == PI_CHAR:
+            continue
         code = ord(char)
         is_digit = 48 <= code <= 57
         is_upper = 65 <= code <= 90
@@ -308,6 +324,273 @@ def _format_result(value):
         return "= {:.12g}".format(value)
     except Exception:
         return "= {}".format(value)
+
+
+def _load_json_from_paths(paths):
+    if json is None:
+        return None
+    for path in paths:
+        for candidate in (path, path + ".bak"):
+            try:
+                with open(candidate, "r") as fh:
+                    return json.load(fh)
+            except Exception:
+                pass
+    return None
+
+
+def _remove_file(path):
+    if os is None:
+        return False
+    try:
+        os.remove(path)
+        return True
+    except Exception:
+        return False
+
+
+def _replace_file(src, dst):
+    if os is None:
+        return False
+    try:
+        os.rename(src, dst)
+        return True
+    except Exception:
+        try:
+            os.remove(dst)
+        except Exception:
+            pass
+        try:
+            os.rename(src, dst)
+            return True
+        except Exception:
+            return False
+
+
+def _save_json_to_paths(paths, payload):
+    if json is None:
+        return False
+    for path in paths:
+        temp_path = path + ".tmp"
+        backup_path = path + ".bak"
+        try:
+            with open(temp_path, "w") as fh:
+                json.dump(payload, fh)
+        except Exception:
+            _remove_file(temp_path)
+            pass
+            continue
+
+        _replace_file(path, backup_path)
+        if _replace_file(temp_path, path):
+            return True
+        _remove_file(temp_path)
+    return False
+
+
+def _child_slot_names(item):
+    if isinstance(item, FractionNode):
+        return ("numerator", "denominator")
+    if isinstance(item, PowerNode):
+        return ("base", "exponent")
+    if isinstance(item, RootNode):
+        return ("degree", "radicand")
+    if isinstance(item, LogNode):
+        return ("base", "argument")
+    return ()
+
+
+def _serialize_slot(slot):
+    items = []
+    for item in getattr(slot, "items", []):
+        serialized = _serialize_item(item)
+        if serialized is not None:
+            items.append(serialized)
+    return {"items": items}
+
+
+def _serialize_item(item):
+    if isinstance(item, TokenNode):
+        return {"kind": "token", "text": str(item.text or "")}
+
+    if isinstance(item, FractionNode):
+        return {
+            "kind": "fraction",
+            "numerator": _serialize_slot(item.numerator),
+            "denominator": _serialize_slot(item.denominator),
+        }
+
+    if isinstance(item, PowerNode):
+        return {
+            "kind": "power",
+            "base": _serialize_slot(item.base),
+            "exponent": _serialize_slot(item.exponent),
+        }
+
+    if isinstance(item, RootNode):
+        return {
+            "kind": "root",
+            "degree": _serialize_slot(item.degree),
+            "radicand": _serialize_slot(item.radicand),
+        }
+
+    if isinstance(item, LogNode):
+        return {
+            "kind": "log",
+            "base": _serialize_slot(item.base),
+            "argument": _serialize_slot(item.argument),
+        }
+
+    return None
+
+
+def _load_slot_from_state(slot, state):
+    slot.items = []
+    if not isinstance(state, dict):
+        return
+    items = state.get("items")
+    if not isinstance(items, list):
+        return
+    for item_state in items:
+        item = _deserialize_item(item_state)
+        if item is None:
+            continue
+        item.parent_slot = slot
+        slot.items.append(item)
+
+
+def _deserialize_item(state):
+    if not isinstance(state, dict):
+        return None
+
+    kind = str(state.get("kind") or "")
+    if kind == "token":
+        return TokenNode(str(state.get("text") or ""))
+
+    if kind == "fraction":
+        item = FractionNode()
+        _load_slot_from_state(item.numerator, state.get("numerator"))
+        _load_slot_from_state(item.denominator, state.get("denominator"))
+        return item
+
+    if kind == "power":
+        item = PowerNode()
+        _load_slot_from_state(item.base, state.get("base"))
+        _load_slot_from_state(item.exponent, state.get("exponent"))
+        return item
+
+    if kind == "root":
+        item = RootNode()
+        _load_slot_from_state(item.degree, state.get("degree"))
+        _load_slot_from_state(item.radicand, state.get("radicand"))
+        return item
+
+    if kind == "log":
+        item = LogNode()
+        _load_slot_from_state(item.base, state.get("base"))
+        _load_slot_from_state(item.argument, state.get("argument"))
+        return item
+
+    return None
+
+
+def _find_slot_path(slot, target_slot):
+    if slot is target_slot:
+        return []
+
+    for index, item in enumerate(getattr(slot, "items", [])):
+        for child_name in _child_slot_names(item):
+            child_slot = getattr(item, child_name, None)
+            if child_slot is None:
+                continue
+            child_path = _find_slot_path(child_slot, target_slot)
+            if child_path is not None:
+                return [{"item": index, "slot": child_name}] + child_path
+    return None
+
+
+def _resolve_slot_path(root_slot, path):
+    slot = root_slot
+    if not isinstance(path, list):
+        return slot
+
+    for step in path:
+        if not isinstance(step, dict):
+            return root_slot
+        try:
+            item_index = int(step.get("item", -1))
+        except Exception:
+            return root_slot
+        child_name = str(step.get("slot") or "")
+        if item_index < 0 or item_index >= len(slot.items):
+            return root_slot
+        item = slot.items[item_index]
+        child_slot = getattr(item, child_name, None)
+        if child_slot is None:
+            return root_slot
+        slot = child_slot
+    return slot
+
+
+def _serialize_editor_state(editor):
+    cursor_path = _find_slot_path(editor.root, editor.cursor_slot)
+    if cursor_path is None:
+        cursor_path = []
+    return {
+        "root": _serialize_slot(editor.root),
+        "cursor_path": cursor_path,
+        "cursor_index": int(getattr(editor, "cursor_index", 0) or 0),
+        "scroll_x": int(getattr(editor, "scroll_x", 0) or 0),
+        "scroll_y": int(getattr(editor, "scroll_y", 0) or 0),
+        "message": str(getattr(editor, "message", "") or ""),
+    }
+
+
+def _restore_editor_from_state(state):
+    if not isinstance(state, dict):
+        return None
+
+    editor = _MathEditor()
+    _load_slot_from_state(editor.root, state.get("root"))
+    editor.cursor_slot = _resolve_slot_path(editor.root, state.get("cursor_path") or [])
+    try:
+        cursor_index = int(state.get("cursor_index", 0) or 0)
+    except Exception:
+        cursor_index = 0
+    editor.cursor_index = max(0, min(cursor_index, len(editor.cursor_slot.items)))
+    try:
+        editor.scroll_x = max(0, int(state.get("scroll_x", 0) or 0))
+    except Exception:
+        editor.scroll_x = 0
+    try:
+        editor.scroll_y = max(0, int(state.get("scroll_y", 0) or 0))
+    except Exception:
+        editor.scroll_y = 0
+    editor.message = str(state.get("message", "") or "")
+    editor._cursor_visible = True
+    editor._cursor_last_toggle = _ticks_ms()
+    return editor
+
+
+def _load_saved_editor_state():
+    global _calculate_state_cache
+
+    state = _load_json_from_paths(_CALCULATE_STATE_PATHS)
+    editor = _restore_editor_from_state(state)
+    if editor is None:
+        return None
+    _calculate_state_cache = _serialize_editor_state(editor)
+    return editor
+
+
+def _save_calculate_state(editor):
+    global _calculate_state_cache
+
+    payload = _serialize_editor_state(editor)
+    if payload == _calculate_state_cache:
+        return
+    if _save_json_to_paths(_CALCULATE_STATE_PATHS, payload):
+        _calculate_state_cache = payload
 
 
 class _MathEditor:
@@ -422,7 +705,7 @@ class _MathEditor:
 
     def _placeholder_height(self, scale):
         scale = int(scale)
-        return max(7, self._text_height(scale) - max(1, scale))
+        return max(7, self._text_height(scale))
 
     def _take_previous_atom(self, slot, index):
         index = max(0, min(int(index), len(slot.items)))
@@ -510,6 +793,26 @@ class _MathEditor:
             self._collect_positions(node.argument, positions)
 
     def _move_linear(self, step):
+        step = int(step)
+        slot = self.cursor_slot
+        owner = getattr(slot, "owner", None)
+
+        if isinstance(owner, FractionNode):
+            parent_slot = getattr(owner, "parent_slot", None)
+            if parent_slot is not None:
+                try:
+                    owner_index = parent_slot.items.index(owner)
+                except Exception:
+                    owner_index = -1
+
+                if owner_index >= 0:
+                    if step > 0 and slot is owner.numerator and self.cursor_index >= len(slot.items):
+                        self._set_cursor(parent_slot, owner_index + 1)
+                        return
+                    if step < 0 and slot is owner.denominator and self.cursor_index <= 0:
+                        self._set_cursor(parent_slot, owner_index)
+                        return
+
         positions = []
         self._collect_positions(self.root, positions)
         if not positions:
@@ -528,47 +831,124 @@ class _MathEditor:
             self._set_cursor(self.root, 0)
             return
 
-        target = (current + int(step)) % len(positions)
+        target = (current + step) % len(positions)
         self._set_cursor(positions[target][0], positions[target][1])
 
+    def _parent_slot(self, slot):
+        owner = getattr(slot, "owner", None)
+        return getattr(owner, "parent_slot", None)
+
+    def _is_ancestor_slot(self, maybe_ancestor, slot):
+        current = self._parent_slot(slot)
+        while current is not None:
+            if current is maybe_ancestor:
+                return True
+            current = self._parent_slot(current)
+        return False
+
+    def _slot_cursor_box(self, slot):
+        top = int(getattr(slot, "y", 0) or 0)
+        if getattr(slot, "items", None):
+            height = max(7, int(getattr(slot, "height", 0) or 0))
+        else:
+            height = max(7, self._placeholder_height(self._slot_scale(slot)))
+        return top, height
+
+    def _cursor_x_for(self, slot, index):
+        positions = getattr(slot, "positions", None) or [getattr(slot, "x", 0)]
+        if index < len(positions):
+            return int(positions[index])
+        return int(positions[-1])
+
+    def _collect_cursor_targets(self, slot, targets):
+        top, height = self._slot_cursor_box(slot)
+        center_y = top + (height / 2.0)
+        positions = getattr(slot, "positions", None) or [getattr(slot, "x", 0)]
+        for index, x in enumerate(positions):
+            targets.append(
+                {
+                    "slot": slot,
+                    "index": index,
+                    "x": int(x),
+                    "top": top,
+                    "height": height,
+                    "center_y": center_y,
+                }
+            )
+
+        for item in getattr(slot, "items", []):
+            if isinstance(item, FractionNode):
+                self._collect_cursor_targets(item.numerator, targets)
+                self._collect_cursor_targets(item.denominator, targets)
+            elif isinstance(item, PowerNode):
+                self._collect_cursor_targets(item.base, targets)
+                self._collect_cursor_targets(item.exponent, targets)
+            elif isinstance(item, RootNode):
+                self._collect_cursor_targets(item.degree, targets)
+                self._collect_cursor_targets(item.radicand, targets)
+            elif isinstance(item, LogNode):
+                self._collect_cursor_targets(item.base, targets)
+                self._collect_cursor_targets(item.argument, targets)
+
+    def _prepare_layout(self):
+        self._measure_slot(self.root)
+        content_top = 1
+        content_bottom = DISPLAY_HEIGHT - CHAR_HEIGHT - 6
+        content_height = max(1, content_bottom - content_top + 1)
+        top = content_top + max(0, (content_height - self.root.height) // 2)
+        self._layout_slot(self.root, _WORK_LEFT, top, self.root.baseline)
+        return content_top, content_bottom
+
     def _move_vertical(self, direction):
-        slot = self.cursor_slot
-        owner = slot.owner
-        target = None
+        direction = -1 if int(direction) < 0 else 1
+        self._prepare_layout()
 
-        if isinstance(owner, FractionNode):
-            if direction > 0 and slot is owner.numerator:
-                target = owner.denominator
-            elif direction < 0 and slot is owner.denominator:
-                target = owner.numerator
-        elif isinstance(owner, PowerNode):
-            if direction > 0 and slot is owner.base:
-                target = owner.exponent
-            elif direction < 0 and slot is owner.exponent:
-                target = owner.base
-        elif isinstance(owner, LogNode):
-            if direction > 0 and slot is owner.base:
-                target = owner.argument
-            elif direction < 0 and slot is owner.argument:
-                target = owner.base
-        elif isinstance(owner, RootNode):
-            if direction > 0 and slot is owner.degree:
-                target = owner.radicand
-            elif direction < 0 and slot is owner.radicand:
-                target = owner.degree
+        current_x = self._cursor_x_for(self.cursor_slot, self.cursor_index)
+        current_top, current_height = self._slot_cursor_box(self.cursor_slot)
+        current_center_y = current_top + (current_height / 2.0)
 
-        if target is None:
+        targets = []
+        self._collect_cursor_targets(self.root, targets)
+
+        candidates = []
+        for target in targets:
+            target_slot = target["slot"]
+            target_index = target["index"]
+
+            if target_slot is self.cursor_slot and target_index == self.cursor_index:
+                continue
+            if self._is_ancestor_slot(target_slot, self.cursor_slot):
+                continue
+
+            delta_y = target["center_y"] - current_center_y
+            if direction > 0 and delta_y <= 0:
+                continue
+            if direction < 0 and delta_y >= 0:
+                continue
+
+            candidates.append(target)
+
+        if not candidates:
             return
 
-        source_len = len(slot.items)
-        target_len = len(target.items)
-        if source_len <= 0:
-            target_index = target_len
-        else:
-            ratio = self.cursor_index / float(source_len)
-            target_index = int(round(ratio * target_len))
+        aligned = [
+            target
+            for target in candidates
+            if abs(target["x"] - current_x) <= (CHAR_ADVANCE * 2)
+        ]
+        if aligned:
+            candidates = aligned
 
-        self._set_cursor(target, target_index)
+        best = min(
+            candidates,
+            key=lambda target: (
+                abs(target["center_y"] - current_center_y),
+                abs(target["x"] - current_x),
+                0 if self._parent_slot(target["slot"]) is self._parent_slot(self.cursor_slot) else 1,
+                abs(target["height"] - current_height),
+            ),
+        )
+        self._set_cursor(best["slot"], best["index"])
 
     def _insert_sequence(self, items, cursor_index=None):
         slot = self.cursor_slot
@@ -581,7 +961,7 @@ class _MathEditor:
         self.message = ""
 
     def _insert_token(self, token):
-        token = str(token or "")
+        token = normalize_pi_token(token)
         if token == "":
             return
         if token == "tab":
@@ -754,7 +1134,7 @@ class _MathEditor:
 
     def _item_to_expression(self, item):
         if isinstance(item, TokenNode):
-            return item.text, True
+            return normalize_expression(item.text), True
 
         if isinstance(item, FractionNode):
             numerator, ok_n = self._slot_to_expression(item.numerator)
@@ -797,6 +1177,7 @@ class _MathEditor:
         if not ok:
             self.message = "ERR: incomplete"
             self._reset_cursor_blink()
+            _save_calculate_state(self)
             return
 
         try:
@@ -807,6 +1188,7 @@ class _MathEditor:
         except Exception as exc:
             self.message = "ERR: {}".format(exc)
         self._reset_cursor_blink()
+        _save_calculate_state(self)
 
     def _measure_slot(self, slot):
         scale = self._slot_scale(slot)
@@ -974,9 +1356,38 @@ class _MathEditor:
             positions.append(current_x)
         slot.positions = positions
 
+    def _fraction_adjacent_operator_offset(self, item):
+        if not isinstance(item, TokenNode):
+            return 0
+
+        token_text = str(getattr(item, "text", "") or "")
+        if token_text not in ("+", "-", "*", "/", "="):
+            return 0
+
+        parent_slot = getattr(item, "parent_slot", None)
+        slot_items = getattr(parent_slot, "items", None)
+        if not slot_items:
+            return 0
+
+        try:
+            item_index = slot_items.index(item)
+        except Exception:
+            return 0
+
+        if item_index <= 0 or not isinstance(slot_items[item_index - 1], FractionNode):
+            return 0
+
+        scale = max(1, int(self._slot_scale(parent_slot)))
+        operator_line_row = 3 * scale
+        return max(0, int(getattr(item, "baseline", 0) or 0) - operator_line_row)
+
     def _layout_item(self, item, x, y, baseline):
         item.x = int(x)
         item.y = int(y + baseline - item.baseline)
+
+        if isinstance(item, TokenNode):
+            item.y += self._fraction_adjacent_operator_offset(item)
+            return
 
         if isinstance(item, FractionNode):
             inner_w = item.width - (_FRACTION_PAD * 2)
@@ -1140,15 +1551,10 @@ class _MathEditor:
     def _draw_placeholder(self, slot, scroll_x, scroll_y):
         scale = self._slot_scale(slot)
         box_x = slot.x - scroll_x
-        box_y = (
-            slot.y
-            + max(1, slot.baseline - self._placeholder_height(scale) + 1)
-            - scroll_y
-        )
+        box_y = slot.y - scroll_y
         box_w = max(6, slot.width - 1)
-        box_h = max(5, self._placeholder_height(scale) - 1)
+        box_h = max(7, self._placeholder_height(scale))
         self._rect(box_x, box_y, box_w, box_h)
-        self._hline(box_x + 1, box_y + box_h - 1, max(1, box_w - 2))
 
     def _render_slot(self, slot, scroll_x, scroll_y):
         if not slot.items:
@@ -1257,7 +1663,7 @@ class _MathEditor:
             top = slot.y
             height = max(7, slot.height)
         else:
-            top = slot.y + max(1, slot.baseline - self._placeholder_height(self._slot_scale(slot)) + 1)
+            top = slot.y
             height = max(7, self._placeholder_height(self._slot_scale(slot)))
 
         return x, top, height
@@ -1331,12 +1737,7 @@ class _MathEditor:
         set_active_view("text")
         self.canvas.clear()
 
-        self._measure_slot(self.root)
-        content_top = 1
-        content_bottom = DISPLAY_HEIGHT - CHAR_HEIGHT - 6
-        content_height = max(1, content_bottom - content_top + 1)
-        top = content_top + max(0, (content_height - self.root.height) // 2)
-        self._layout_slot(self.root, _WORK_LEFT, top, self.root.baseline)
+        content_top, content_bottom = self._prepare_layout()
 
         cursor_x, cursor_y, cursor_h = self._cursor_geometry()
         view_left = _WORK_LEFT
@@ -1431,12 +1832,15 @@ class _MathEditor:
             self._insert_token(token)
 
         self.render()
+        _save_calculate_state(self)
 
 
 def _load_editor():
     editor = data_bucket.get(_EDITOR_BUCKET_KEY)
     if getattr(editor, "root", None) is None or not hasattr(editor, "render"):
-        editor = _MathEditor()
+        editor = _load_saved_editor_state()
+        if editor is None:
+            editor = _MathEditor()
         data_bucket[_EDITOR_BUCKET_KEY] = editor
     if not hasattr(editor, "scroll_y"):
         editor.scroll_y = 0
@@ -1444,6 +1848,7 @@ def _load_editor():
         editor._cursor_visible = True
     if not hasattr(editor, "_cursor_last_toggle"):
         editor._cursor_last_toggle = _ticks_ms()
+    _save_calculate_state(editor)
     return editor
 
 
@@ -1493,29 +1898,33 @@ def calculate():
     pending_action = data_bucket.pop(_PENDING_BUCKET_KEY, None)
     if pending_action:
         editor.apply_pending_action(pending_action)
+        _save_calculate_state(editor)
 
     editor.render()
+    try:
+        while True:
+            token = _start_typing_with_editor_idle(editor)
 
-    while True:
-        token = _start_typing_with_editor_idle(editor)
+            if token is None:
+                editor.render()
+                continue
 
-        if token is None:
-            editor.render()
-            continue
+            if token is _MODE_STATE_UPDATE or token == "":
+                editor.render()
+                continue
 
-        if token is _MODE_STATE_UPDATE or token == "":
-            editor.render()
-            continue
+            if token == "toolbox":
+                data_bucket[_EDITOR_BUCKET_KEY] = editor
+                _save_calculate_state(editor)
+                app.set_app_name("toolbox")
+                app.set_group_name("root")
+                break
 
-        if token == "toolbox":
-            data_bucket[_EDITOR_BUCKET_KEY] = editor
-            app.set_app_name("toolbox")
-            app.set_group_name("root")
-            break
+            if token in ("ok", "exe"):
+                editor.evaluate()
+                editor.render()
+                continue
 
-        if token in ("ok", "exe"):
-            editor.evaluate()
-            editor.render()
-            continue
-
-        editor.handle_key(token)
+            editor.handle_key(token)
+    finally:
+        _save_calculate_state(editor)

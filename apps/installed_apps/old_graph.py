@@ -14,6 +14,7 @@ except ImportError:
 
 import builtins
 import gc
+import json
 import math
 import utime as time  # type:ignore
 
@@ -29,6 +30,7 @@ from data_modules.object_handler import (
     nav,
     typer,
 )
+from data_modules.math_symbols import PI_CHAR, normalize_expression
 from process_modules.form_buffer import Form
 from process_modules.form_buffer_uploader import Tbf as FormTbf
 from process_modules.navigation import NavigationRequest, register_app_entry
@@ -126,6 +128,7 @@ TOOLBOX_BOX_X = MENU_BOX_X
 TOOLBOX_BOX_Y = MENU_BOX_Y
 TOOLBOX_BOX_W = MENU_BOX_W
 TOOLBOX_BOX_H = 47
+OLD_GRAPH_SCROLLBAR_RIGHT_GAP = 2
 
 
 class OldGraphFormTbf(FormTbf):
@@ -204,7 +207,7 @@ class OldGraphFormTbf(FormTbf):
                 metrics["panel_x"]
                 + metrics["panel_w"]
                 - form_buffer_uploader_mod.SCROLL_W
-                - 1
+                - OLD_GRAPH_SCROLLBAR_RIGHT_GAP
             )
             metrics["scroll_y"] = metrics["panel_y"] + 2
             metrics["scroll_h"] = metrics["content_h"]
@@ -224,7 +227,7 @@ class OldGraphFormTbf(FormTbf):
             metrics["panel_x"]
             + metrics["panel_w"]
             - form_buffer_uploader_mod.SCROLL_W
-            - 1
+            - OLD_GRAPH_SCROLLBAR_RIGHT_GAP
         )
         metrics["scroll_y"] = metrics["panel_y"] + 2
         metrics["scroll_h"] = metrics["content_h"]
@@ -487,6 +490,7 @@ EVAL_GLOBALS = {
     "trunc": math.trunc,
     # Constants
     "pi": math.pi,
+    PI_CHAR: math.pi,
     "e": math.e,
 }
 
@@ -515,6 +519,7 @@ class MediumDigits:
         "d": [0x38, 0x54, 0x54, 0x54, 0x18],
         "e": [0x38, 0x54, 0x54, 0x54, 0x18],
         "f": [0x08, 0x7E, 0x09, 0x01, 0x02],
+        PI_CHAR: [0x04, 0x7C, 0x04, 0x7C, 0x04],
     }
 
     @classmethod
@@ -570,6 +575,8 @@ MAX_GRAPH_COUNT = 10
 HOME_INPUT_COLS = 16
 HOME_HFIELD_LABEL_W = 15
 HOME_HFIELD_LABEL_PAD_X = 0
+OLD_GRAPH_STATE_PATHS = ("/db/old_graph_state.json", "db/old_graph_state.json")
+_old_graph_state_cache = None
 
 GRAPH_TYPE_RECT = "rect"
 GRAPH_TYPE_POLAR = "polar"
@@ -676,6 +683,154 @@ def _default_graph_entry(index):
     }
 
 
+def _load_json_from_paths(paths):
+    for path in paths:
+        try:
+            with open(path, "r") as fh:
+                return json.load(fh)
+        except Exception:
+            pass
+    return None
+
+
+def _save_json_to_paths(paths, payload):
+    for path in paths:
+        try:
+            with open(path, "w") as fh:
+                json.dump(payload, fh)
+            return True
+        except Exception:
+            pass
+    return False
+
+
+def _safe_float(value, fallback):
+    try:
+        return float(value)
+    except Exception:
+        return float(fallback)
+
+
+def _sanitize_rect_bounds(bounds):
+    defaults = _default_rect_bounds()
+    if not isinstance(bounds, dict):
+        return defaults
+    cleaned = {
+        "x_min": _safe_float(bounds.get("x_min"), defaults["x_min"]),
+        "x_max": _safe_float(bounds.get("x_max"), defaults["x_max"]),
+        "y_min": _safe_float(bounds.get("y_min"), defaults["y_min"]),
+        "y_max": _safe_float(bounds.get("y_max"), defaults["y_max"]),
+    }
+    if cleaned["x_min"] == cleaned["x_max"] or cleaned["y_min"] == cleaned["y_max"]:
+        return defaults
+    return cleaned
+
+
+def _sanitize_polar_bounds(bounds):
+    defaults = _default_polar_bounds()
+    if not isinstance(bounds, dict):
+        return defaults
+    cleaned = {
+        "theta_min": _safe_float(bounds.get("theta_min"), defaults["theta_min"]),
+        "theta_max": _safe_float(bounds.get("theta_max"), defaults["theta_max"]),
+        "r_max": _safe_float(bounds.get("r_max"), defaults["r_max"]),
+        "r_min": _safe_float(bounds.get("r_min"), defaults["r_min"]),
+    }
+    if cleaned["theta_min"] == cleaned["theta_max"] or cleaned["r_min"] == cleaned["r_max"]:
+        return defaults
+    return cleaned
+
+
+def _serialize_graph_state(graph_state):
+    graphs = []
+    raw_graphs = list(graph_state.get("graphs", []))
+    for index in range(MAX_GRAPH_COUNT):
+        graph = raw_graphs[index] if index < len(raw_graphs) else {}
+        graph_type = graph.get("type", GRAPH_TYPE_RECT)
+        if graph_type not in GRAPH_TYPES:
+            graph_type = GRAPH_TYPE_RECT
+        graph_style = graph.get("style", GRAPH_STYLE_NORMAL)
+        if graph_style not in GRAPH_STYLES:
+            graph_style = GRAPH_STYLE_NORMAL
+        graphs.append(
+            {
+                "expr": str(graph.get("expr", "") or ""),
+                "type": graph_type,
+                "style": graph_style,
+            }
+        )
+
+    focus_index = 0
+    try:
+        focus_index = int(graph_state.get("focus_graph_index", 0) or 0)
+    except Exception:
+        focus_index = 0
+    if focus_index < 0:
+        focus_index = 0
+    if focus_index >= MAX_GRAPH_COUNT:
+        focus_index = MAX_GRAPH_COUNT - 1
+
+    return {
+        "graphs": graphs,
+        "rect_bounds": _sanitize_rect_bounds(graph_state.get("rect_bounds")),
+        "polar_bounds": _sanitize_polar_bounds(graph_state.get("polar_bounds")),
+        "focus_graph_index": focus_index,
+    }
+
+
+def _load_saved_graph_state():
+    global _old_graph_state_cache
+
+    payload = _load_json_from_paths(OLD_GRAPH_STATE_PATHS)
+    if not isinstance(payload, dict):
+        return None
+
+    graph_state = _create_graph_home_state()
+    raw_graphs = payload.get("graphs")
+    if isinstance(raw_graphs, list):
+        graph_state["graphs"] = []
+        for index in range(MAX_GRAPH_COUNT):
+            raw_graph = raw_graphs[index] if index < len(raw_graphs) and isinstance(raw_graphs[index], dict) else {}
+            graph_type = raw_graph.get("type", GRAPH_TYPE_RECT)
+            if graph_type not in GRAPH_TYPES:
+                graph_type = GRAPH_TYPE_RECT
+            graph_style = raw_graph.get("style", GRAPH_STYLE_NORMAL)
+            if graph_style not in GRAPH_STYLES:
+                graph_style = GRAPH_STYLE_NORMAL
+            graph_state["graphs"].append(
+                {
+                    "expr": str(raw_graph.get("expr", "") or ""),
+                    "type": graph_type,
+                    "style": graph_style,
+                }
+            )
+
+    graph_state["rect_bounds"] = _sanitize_rect_bounds(payload.get("rect_bounds"))
+    graph_state["polar_bounds"] = _sanitize_polar_bounds(payload.get("polar_bounds"))
+    try:
+        focus_index = int(payload.get("focus_graph_index", 0) or 0)
+    except Exception:
+        focus_index = 0
+    if focus_index < 0:
+        focus_index = 0
+    if focus_index >= MAX_GRAPH_COUNT:
+        focus_index = MAX_GRAPH_COUNT - 1
+    graph_state["focus_graph_index"] = focus_index
+
+    _old_graph_state_cache = _serialize_graph_state(graph_state)
+    return graph_state
+
+
+def _save_old_graph_state(graph_state):
+    global _old_graph_state_cache
+
+    payload = _serialize_graph_state(graph_state)
+    if payload == _old_graph_state_cache:
+        return
+    if _save_json_to_paths(OLD_GRAPH_STATE_PATHS, payload):
+        _old_graph_state_cache = payload
+
+
 def _create_graph_home_state():
     graphs = []
     for index in range(MAX_GRAPH_COUNT):
@@ -780,6 +935,11 @@ def _sync_graph_state_from_form(graph_state):
         graph_state["focus_graph_index"] = focus_index
 
 
+def _save_old_graph_state_from_form(graph_state):
+    _sync_graph_state_from_form(graph_state)
+    _save_old_graph_state(graph_state)
+
+
 def _apply_home_form(graph_state):
     form.ui_style = "buffer"
     form.focus_inputs_only = True
@@ -838,13 +998,13 @@ def _home_footer_text(graph_state):
 
 
 def _draw_status_page(text_value):
-    text_value = str(text_value or "")[:21]
+    text_value = _display_text(str(text_value or "")[:21])
     page_buf = bytearray(DISPLAY_WIDTH)
     page_fb = framebuf.FrameBuffer(page_buf, DISPLAY_WIDTH, 8, framebuf.MONO_VLSB)
     page_fb.fill(0)
     if text_value:
-        text_x = max(0, (DISPLAY_WIDTH - len(text_value) * 8) // 2)
-        page_fb.text(text_value, text_x, 0, 1)
+        text_x = max(0, (DISPLAY_WIDTH - _text_width(text_value)) // 2)
+        _draw_ui_text(page_fb, text_value, text_x, 0, 1, max_width=DISPLAY_WIDTH)
     display.graphics(page_buf, page=BOTTOM_PAGE_INDEX, column=0, width=DISPLAY_WIDTH, pages=1)
     set_active_view("form")
 
@@ -896,6 +1056,11 @@ def _refresh_home_form(graph_state, force=False):
     _sync_graph_state_from_form(graph_state)
     _set_home_footer_steady(True)
     form_refresh.refresh(state="", force=force)
+    _draw_home_navbar(graph_state)
+
+
+def _refresh_home_nav_overlay_only(graph_state):
+    _set_home_footer_steady(True)
     _draw_home_navbar(graph_state)
 
 
@@ -1113,10 +1278,10 @@ def format_number(value):
         if multiple == 0:
             return "0 "
         if multiple == 1:
-            return "pi "
+            return PI_CHAR + " "
         if multiple == -1:
-            return "-pi "
-        return str(multiple) + "*pi "
+            return "-" + PI_CHAR + " "
+        return str(multiple) + "*" + PI_CHAR + " "
 
     abs_v = abs(value)
     if abs_v < 0.01:
@@ -1171,7 +1336,7 @@ def _samples_per_px_for_view(x_range):
 
 
 def _make_eval_fn(expression, variable_names=("x",)):
-    expression = str(expression or "").strip()
+    expression = normalize_expression(expression).strip()
     if not expression:
         return None
     try:
@@ -1192,7 +1357,7 @@ def _make_eval_fn(expression, variable_names=("x",)):
 
 
 def get_eval_fn(expression, variable_names=("x",)):
-    cache_key = (str(expression or "").strip(), tuple(variable_names or ("x",)))
+    cache_key = (normalize_expression(expression).strip(), tuple(variable_names or ("x",)))
     if cache_key not in _EVAL_CACHE:
         _EVAL_CACHE[cache_key] = _make_eval_fn(cache_key[0], cache_key[1])
     return _EVAL_CACHE.get(cache_key)
@@ -1212,10 +1377,10 @@ def safe_eval(eval_fn, x_value):
 
 def get_bounds():
     return {
-        "x_min": eval(form.inp_list()["inp_1"], EVAL_GLOBALS),
-        "x_max": eval(form.inp_list()["inp_2"], EVAL_GLOBALS),
-        "y_min": eval(form.inp_list()["inp_3"], EVAL_GLOBALS),
-        "y_max": eval(form.inp_list()["inp_4"], EVAL_GLOBALS),
+        "x_min": eval(normalize_expression(form.inp_list()["inp_1"]), EVAL_GLOBALS),
+        "x_max": eval(normalize_expression(form.inp_list()["inp_2"]), EVAL_GLOBALS),
+        "y_min": eval(normalize_expression(form.inp_list()["inp_3"]), EVAL_GLOBALS),
+        "y_max": eval(normalize_expression(form.inp_list()["inp_4"]), EVAL_GLOBALS),
     }
 
 
@@ -1876,7 +2041,7 @@ def _draw_toolbox_shell(fb, title):
 
 
 def _draw_menu_scrollbar(fb, item_count, top_index, visible_rows=MENU_VISIBLE_ROWS):
-    track_x = MENU_BOX_X + MENU_BOX_W - MENU_SCROLL_W - 1
+    track_x = MENU_BOX_X + MENU_BOX_W - MENU_SCROLL_W - OLD_GRAPH_SCROLLBAR_RIGHT_GAP
     track_y = MENU_BOX_Y + 2
     track_h = MENU_BOX_H - 4
 
@@ -1895,7 +2060,7 @@ def _draw_menu_scrollbar(fb, item_count, top_index, visible_rows=MENU_VISIBLE_RO
 
 
 def _draw_toolbox_scrollbar(fb, item_count, top_index):
-    track_x = TOOLBOX_BOX_X + TOOLBOX_BOX_W - MENU_SCROLL_W - 1
+    track_x = TOOLBOX_BOX_X + TOOLBOX_BOX_W - MENU_SCROLL_W - OLD_GRAPH_SCROLLBAR_RIGHT_GAP
     track_y = TOOLBOX_BOX_Y + 2
     track_h = TOOLBOX_BOX_H - 4
 
@@ -2242,16 +2407,16 @@ def _configure_view_window_form(rect_bounds, polar_bounds):
 
 def _parse_window_form_values():
     rect_bounds = {
-        "x_min": float(eval(str(form.input_list["inp_0"]).strip() or "0", EVAL_GLOBALS)),
-        "x_max": float(eval(str(form.input_list["inp_1"]).strip() or "0", EVAL_GLOBALS)),
-        "y_min": float(eval(str(form.input_list["inp_2"]).strip() or "0", EVAL_GLOBALS)),
-        "y_max": float(eval(str(form.input_list["inp_3"]).strip() or "0", EVAL_GLOBALS)),
+        "x_min": float(eval(normalize_expression(str(form.input_list["inp_0"]).strip()) or "0", EVAL_GLOBALS)),
+        "x_max": float(eval(normalize_expression(str(form.input_list["inp_1"]).strip()) or "0", EVAL_GLOBALS)),
+        "y_min": float(eval(normalize_expression(str(form.input_list["inp_2"]).strip()) or "0", EVAL_GLOBALS)),
+        "y_max": float(eval(normalize_expression(str(form.input_list["inp_3"]).strip()) or "0", EVAL_GLOBALS)),
     }
     polar_bounds = {
-        "theta_min": float(eval(str(form.input_list["inp_4"]).strip() or "0", EVAL_GLOBALS)),
-        "theta_max": float(eval(str(form.input_list["inp_5"]).strip() or "0", EVAL_GLOBALS)),
-        "r_max": float(eval(str(form.input_list["inp_6"]).strip() or "0", EVAL_GLOBALS)),
-        "r_min": float(eval(str(form.input_list["inp_7"]).strip() or "0", EVAL_GLOBALS)),
+        "theta_min": float(eval(normalize_expression(str(form.input_list["inp_4"]).strip()) or "0", EVAL_GLOBALS)),
+        "theta_max": float(eval(normalize_expression(str(form.input_list["inp_5"]).strip()) or "0", EVAL_GLOBALS)),
+        "r_max": float(eval(normalize_expression(str(form.input_list["inp_6"]).strip()) or "0", EVAL_GLOBALS)),
+        "r_min": float(eval(normalize_expression(str(form.input_list["inp_7"]).strip()) or "0", EVAL_GLOBALS)),
     }
     if rect_bounds["x_max"] == rect_bounds["x_min"]:
         raise ValueError("x range")
@@ -2264,7 +2429,7 @@ def _parse_window_form_values():
     return rect_bounds, polar_bounds
 
 
-def _edit_view_window(rect_bounds, polar_bounds):
+def _edit_view_window(rect_bounds, polar_bounds, on_change=None):
     previous_form = _capture_form_state()
     status_text = [""]
     last_valid = [
@@ -2286,6 +2451,11 @@ def _edit_view_window(rect_bounds, polar_bounds):
             return False
         last_valid[0] = parsed_rect
         last_valid[1] = parsed_polar
+        if callable(on_change):
+            try:
+                on_change(parsed_rect, parsed_polar)
+            except Exception:
+                pass
         return True
 
     try:
@@ -2336,6 +2506,14 @@ def _open_graph_config_menu(fb, fb_buf, graph_state, graph_index):
         graph["style"] = temp_graph["style"]
         graph_state["rect_bounds"] = _copy_bounds_dict(temp_rect)
         graph_state["polar_bounds"] = _copy_polar_bounds(temp_polar)
+        _save_old_graph_state(graph_state)
+
+    def _commit_window_bounds(rect_bounds_value, polar_bounds_value):
+        temp_rect.clear()
+        temp_rect.update(_copy_bounds_dict(rect_bounds_value))
+        temp_polar.clear()
+        temp_polar.update(_copy_polar_bounds(polar_bounds_value))
+        _commit_graph_config()
 
     while True:
         _draw_graph_config_menu(fb, fb_buf, graph_index, temp_graph)
@@ -2366,7 +2544,11 @@ def _open_graph_config_menu(fb, fb_buf, graph_state, graph_index):
                 _commit_graph_config()
         elif key in ("ok", "exe"):
             if temp_graph["_selected_row"] == HOME_TOOLBOX_WINDOW_ROW:
-                view_window = _edit_view_window(temp_rect, temp_polar)
+                view_window = _edit_view_window(
+                    temp_rect,
+                    temp_polar,
+                    on_change=_commit_window_bounds,
+                )
                 if view_window == "home":
                     return "home"
                 if view_window is None:
@@ -2413,8 +2595,6 @@ def draw_cursor_overlay(fb, cursor, bounds, eval_fn, plot_height, tool_state=Non
             if marker_x + marker_w > DISPLAY_WIDTH:
                 marker_w = DISPLAY_WIDTH - marker_x
             fb.hline(marker_x, 0, marker_w, 1)
-        area_value = _compute_area_value(eval_fn, selected_tool)
-        _draw_navbar_text(fb, _format_area_info_text(selected_tool, area_value), plot_height)
         return
 
     if selected_tool is not None and selected_tool.mode in (
@@ -2426,32 +2606,13 @@ def draw_cursor_overlay(fb, cursor, bounds, eval_fn, plot_height, tool_state=Non
         x_px = _x_value_to_pixel(x_value, bounds, clamp=False)
         if x_px is not None:
             fb.vline(x_px, 0, plot_height, 1)
-        y_value = safe_eval(eval_fn, x_value)
-        if selected_tool.mode == TOOL_COORDINATES:
-            _draw_navbar_text(fb, _format_xy_text(x_value, y_value), plot_height)
-            return
-
-        _, tan_slope = _get_tangent_info(eval_fn, bounds, x_value)
-        _draw_navbar_text(
-            fb,
-            _format_line_tool_text(selected_tool, x_value, y_value, tan_slope),
-            plot_height,
-        )
         return
 
     x_range = bounds["x_max"] - bounds["x_min"]
     if x_range == 0 or DISPLAY_WIDTH < 2:
         return
 
-    x_coord = bounds["x_min"] + (cursor.x_pixel / (DISPLAY_WIDTH - 1)) * x_range
     fb.vline(cursor.x_pixel, 0, plot_height, 1)
-
-    draw_medium_text(fb, _fmt_cursor_coord(x_coord, "x"), 2, plot_height + 1)
-    y_coord = safe_eval(eval_fn, x_coord)
-    if y_coord is None:
-        draw_medium_text(fb, "y undef", DISPLAY_WIDTH - 42, plot_height + 1)
-    else:
-        draw_medium_text(fb, _fmt_cursor_coord(y_coord, "y"), DISPLAY_WIDTH - 42, plot_height + 1)
 
 
 def replot(fb, fb_buf, graph_state, cursor, cache_buf=None, tool_state=None):
@@ -2466,7 +2627,7 @@ def replot(fb, fb_buf, graph_state, cursor, cache_buf=None, tool_state=None):
     tool_active = (
         tool_state is not None and tool_state.active and primary_eval_fn is not None
     )
-    plot_height = DISPLAY_HEIGHT if not (cursor.active or tool_active) else PLOT_HEIGHT_WITH_CURSOR
+    plot_height = DISPLAY_HEIGHT
 
     x_min = display_bounds["x_min"]
     x_max = display_bounds["x_max"]
@@ -2522,7 +2683,7 @@ def replot(fb, fb_buf, graph_state, cursor, cache_buf=None, tool_state=None):
                     primary_eval_fn,
                     display_bounds,
                     tool_feature,
-                    PLOT_HEIGHT_WITH_CURSOR,
+                    plot_height,
                 )
             elif tool_feature.mode in (TOOL_TANGENT, TOOL_NORMAL):
                 _draw_tangent_or_normal(
@@ -2530,7 +2691,7 @@ def replot(fb, fb_buf, graph_state, cursor, cache_buf=None, tool_state=None):
                     primary_eval_fn,
                     display_bounds,
                     tool_feature,
-                    PLOT_HEIGHT_WITH_CURSOR,
+                    plot_height,
                 )
 
     if cache_buf is not None:
@@ -2542,7 +2703,7 @@ def replot(fb, fb_buf, graph_state, cursor, cache_buf=None, tool_state=None):
             cursor,
             display_bounds,
             primary_eval_fn,
-            PLOT_HEIGHT_WITH_CURSOR,
+            plot_height,
             tool_state,
         )
 
@@ -2570,7 +2731,7 @@ def update_cursor_only(fb, fb_buf, cache_buf, cursor, graph_state, tool_state=No
             cursor,
             graph_state["rect_bounds"],
             primary_eval_fn,
-            PLOT_HEIGHT_WITH_CURSOR,
+            DISPLAY_HEIGHT,
             tool_state,
         )
         _display_plot_column(fb_buf, cursor.prev_x_pixel, _CURSOR_COL_BUF_A)
@@ -2584,7 +2745,9 @@ def update_cursor_only(fb, fb_buf, cache_buf, cursor, graph_state, tool_state=No
 
 
 def _set_initial_form():
-    graph_state = _create_graph_home_state()
+    graph_state = _load_saved_graph_state()
+    if graph_state is None:
+        graph_state = _create_graph_home_state()
     _apply_home_form(graph_state)
     return graph_state
 
@@ -2658,6 +2821,7 @@ def old_graph(db={}):
             if prev_idle_tasks is not None:
                 typer._idle_tasks = prev_idle_tasks
 
+    graph_state = None
     try:
         graph_state = _set_initial_form()
         _refresh_home_form(graph_state)
@@ -2683,6 +2847,7 @@ def old_graph(db={}):
                     ignore_form_back_until_ms = None
 
             if inp == "back":
+                _save_old_graph_state_from_form(graph_state)
                 try:
                     nav.set_restore_callback(None)
                 except Exception:
@@ -2692,6 +2857,7 @@ def old_graph(db={}):
                 break
 	
             if inp == "home":
+                _save_old_graph_state_from_form(graph_state)
                 try:
                     nav.set_restore_callback(None)
                 except Exception:
@@ -2701,7 +2867,7 @@ def old_graph(db={}):
                 return
 
             if inp == "ok":
-                _sync_graph_state_from_form(graph_state)
+                _save_old_graph_state_from_form(graph_state)
                 bounds = graph_state["rect_bounds"]
                 try:
                     nav.set_restore_callback(None)
@@ -2755,6 +2921,7 @@ def old_graph(db={}):
                             graph_state["rect_bounds"] = bounds
                             if cursor.active and tool_state.active:
                                 tool_state.sync_cursor(cursor, bounds)
+                            _save_old_graph_state(graph_state)
                             replot(fb, fb_buf, graph_state, cursor, cache_buf, tool_state)
 
                         elif key == "-":
@@ -2762,6 +2929,7 @@ def old_graph(db={}):
                             graph_state["rect_bounds"] = bounds
                             if cursor.active and tool_state.active:
                                 tool_state.sync_cursor(cursor, bounds)
+                            _save_old_graph_state(graph_state)
                             replot(fb, fb_buf, graph_state, cursor, cache_buf, tool_state)
 
                         elif key == "nav_u":
@@ -2775,6 +2943,7 @@ def old_graph(db={}):
                                 graph_state["rect_bounds"] = bounds
                                 if tool_state.active:
                                     tool_state.sync_cursor(cursor, bounds)
+                                _save_old_graph_state(graph_state)
                                 replot(fb, fb_buf, graph_state, cursor, cache_buf, tool_state)
 
                         elif key == "nav_d":
@@ -2788,6 +2957,7 @@ def old_graph(db={}):
                                 graph_state["rect_bounds"] = bounds
                                 if tool_state.active:
                                     tool_state.sync_cursor(cursor, bounds)
+                                _save_old_graph_state(graph_state)
                                 replot(fb, fb_buf, graph_state, cursor, cache_buf, tool_state)
 
                         elif key == "nav_l":
@@ -2803,6 +2973,7 @@ def old_graph(db={}):
                                 graph_state["rect_bounds"] = bounds
                                 if tool_state.active:
                                     tool_state.sync_cursor(cursor, bounds)
+                                _save_old_graph_state(graph_state)
                                 replot(fb, fb_buf, graph_state, cursor, cache_buf, tool_state)
 
                         elif key == "nav_r":
@@ -2818,6 +2989,7 @@ def old_graph(db={}):
                                 graph_state["rect_bounds"] = bounds
                                 if tool_state.active:
                                     tool_state.sync_cursor(cursor, bounds)
+                                _save_old_graph_state(graph_state)
                                 replot(fb, fb_buf, graph_state, cursor, cache_buf, tool_state)
 
                         elif key == "toolbox":
@@ -2905,10 +3077,11 @@ def old_graph(db={}):
 
             elif inp in ("alpha", "beta"):
                 keypad_state_manager(x=inp)
-                form.update_buffer("")
+                _refresh_home_nav_overlay_only(graph_state)
+                continue
 
             elif inp == "toolbox":
-                _sync_graph_state_from_form(graph_state)
+                _save_old_graph_state_from_form(graph_state)
                 graph_index = int(graph_state.get("focus_graph_index", 0) or 0)
                 config_status = _open_graph_config_menu(fb, fb_buf, graph_state, graph_index)
                 if config_status == "home":
@@ -2920,13 +3093,24 @@ def old_graph(db={}):
                     current_app[1] = "root"
                     return
                 display.clear_display()
+                _save_old_graph_state(graph_state)
+
+            elif inp == "":
+                _refresh_home_nav_overlay_only(graph_state)
+                continue
 
             elif inp not in ("ok",):
                 form.update_buffer(inp)
+                _save_old_graph_state_from_form(graph_state)
 
             _refresh_home_form(graph_state)
 
     finally:
+        if graph_state is not None:
+            try:
+                _save_old_graph_state(graph_state)
+            except Exception:
+                pass
         try:
             nav.set_restore_callback(None)
         except Exception:

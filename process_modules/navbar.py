@@ -93,6 +93,39 @@ class Nav:
 
     def draw_state(self, state):
         state = str(state or "")
+        if hasattr(self.disp_out, "graphics"):
+            page_buf = bytearray(128)
+            if state == "":
+                self.disp_out.graphics(page_buf, page=7, column=0, width=128, pages=1)
+                return
+
+            buf_x = 0
+            invert = (
+                "default" in state
+                or "alpha" in state
+                or "beta" in state
+                or "ALPHA" in state
+            )
+            for char in state:
+                if invert:
+                    char_bytes = self.chrs.invert_letter(char)
+                    cursor_line = 0b11111111
+                else:
+                    char_bytes = self.chrs.Chr2bytes(char)
+                    cursor_line = 0b00000000
+                for byte in char_bytes:
+                    if buf_x >= 128:
+                        break
+                    page_buf[buf_x] = byte
+                    buf_x += 1
+                if buf_x >= 128:
+                    break
+                page_buf[buf_x] = cursor_line
+                buf_x += 1
+
+            self.disp_out.graphics(page_buf, page=7, column=0, width=128, pages=1)
+            return
+
         self.disp_out.set_page_address(7)
         self.disp_out.set_column_address(0)
         for _ in range(128):
