@@ -10,9 +10,9 @@ This README documents the **modules and objects made available by `data_modules/
 
 - **Input/Navigation**
   - `keymap` (`Keypad_5X8`) and `typer` (`Typer`) are created for keypad input handling.【F:data_modules/object_handler.py†L56-L58】
-  - `keypad_state_manager(...)` and `keypad_state_manager_reset()` update the keymap + navbar state when alpha/beta modes change.【F:data_modules/object_handler.py†L91-L107】
+  - `keypad_state_manager(...)` and `keypad_state_manager_reset()` update the shared alpha/beta/ALPHA mode state. `lock` is handled centrally by `typer.start_typing()`, and `nav.current_state()` now acts like a timed overlay: it flashes mode labels such as `alpha locked` / `beta locked` / `ALPHA locked` for about one second, then the screen’s original bottom row is restored automatically.【F:data_modules/object_handler.py†L91-L107】
 - **Buffers**
-  - `text`, `menu`, `form` are instantiated from `Textbuffer`, `Menu`, and `Form` respectively.【F:data_modules/object_handler.py†L63-L68】
+  - `text`, `menu`, `form` are instantiated from `Textbuffer`, `Menu`, and `Form` respectively. `text` and `form` now use the full display height; the bottom row is no longer permanently reserved for the navbar.【F:data_modules/object_handler.py†L63-L68】
 - **Navbar**
   - `nav = Nav(...)` is created and used to show alpha/beta status text in the UI.【F:data_modules/object_handler.py†L72-L73】
 - **Uploaders**
@@ -124,7 +124,7 @@ These classes translate buffer state into display writes:
 **Object instance:** `typer`
 
 ### Key methods
-- `start_typing()` reads the keypad, translates row/col to a symbol, and returns it to the app loop (typical usage in every app input loop).【F:process_modules/typer.py†L9-L28】
+- `start_typing()` reads the keypad, translates row/col to a symbol, consumes the shared `lock` key behavior, and auto-resets unlocked alpha/beta/ALPHA after the next non-mode key so apps inherit the same keypad workflow by default.【F:process_modules/typer.py†L9-L28】
 - `debounce_delay(t=None)` lets apps adjust key debounce timing.【F:process_modules/typer.py†L29-L35】
 
 ---

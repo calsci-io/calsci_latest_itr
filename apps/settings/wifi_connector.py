@@ -27,6 +27,10 @@ sta_if = network.WLAN(network.STA_IF)
 if not sta_if.active():
     sta_if.active(True)
     time.sleep(1)
+try:
+    sta_if.config(pm=0)
+except Exception:
+    pass
 
 def display_error_message(ssid):
     display.clear_display()
@@ -66,11 +70,20 @@ def display_ip_addresses(ssid):
         time.sleep(0.1)
 
 def update_wifi_credentials(ssid, password):
-    with open(wifi_password_data, 'r') as file:
-        data = json.load(file)
-    
+    ssid = str(ssid).strip()
+    password = str(password)
+
+    data = []
+    try:
+        with open(wifi_password_data, "r") as file:
+            loaded = json.load(file)
+            if isinstance(loaded, list):
+                data = loaded
+    except Exception:
+        data = []
+
     for cred in data:
-        if cred["ssid"] == ssid:
+        if isinstance(cred, dict) and cred.get("ssid") == ssid:
             cred["password"] = password
             print(f"Updated password for Wi-Fi {ssid}")
             break
@@ -78,11 +91,11 @@ def update_wifi_credentials(ssid, password):
         data.append({"ssid": ssid, "password": password})
         print(f"Added Wi-Fi {ssid} to JSON")
     
-    with open(wifi_password_data, 'w') as file:
+    with open(wifi_password_data, "w") as file:
         json.dump(data, file)
 
 def wifi_connector():
-    ssid=data_bucket["ssid_g"]
+    ssid = str(data_bucket.get("ssid_g", "")).strip()
     form.input_list={"inp_0": " "}
     form.form_list=["Password:", "inp_0", "Wi-Fi Name:", ssid]
     form.update()
@@ -108,13 +121,27 @@ def wifi_connector():
             menu.update()
             menu_refresh.refresh()
 
-            do_connect(ssid, password)
+            connection_status = bool(do_connect(ssid, password) and sta_if.isconnected())
 
-            connection_status = False
-            connection_status = sta_if.isconnected()
+            connected_ssid = ""
+            if connection_status:
+                try:
+                    connected_ssid = sta_if.config("essid")
+                except Exception:
+                    connected_ssid = ""
+                if connected_ssid and connected_ssid != ssid:
+                    connection_status = False
+
             data_bucket["connection_status_g"] = connection_status
             if connection_status:
+                data_bucket["ssid_g"] = ssid
                 update_wifi_credentials(ssid=ssid, password=password)
+                try:
+                    from process_modules.wireless_transfer import ensure_service
+
+                    ensure_service(force_restart=True)
+                except Exception as err:
+                    print("Wireless REPL start failed:", err)
                 display_ip_addresses(ssid)
             else:
                 display_error_message(ssid)
@@ -138,17 +165,47 @@ def wifi_connector():
         
 
 def do_connect(ssid, password):
+    ssid = str(ssid).strip()
     sta_if.active(True)
+    try:
+        sta_if.config(pm=0)
+    except Exception:
+        pass
+
     if sta_if.isconnected():
-        return None
+        try:
+            current_ssid = sta_if.config("essid")
+        except Exception:
+            current_ssid = ""
+
+        if current_ssid == ssid:
+            return True
+
+        try:
+            sta_if.disconnect()
+            time.sleep(0.2)
+        except Exception:
+            pass
+
     print('Trying to connect to %s...' % ssid)
-    sta_if.connect(ssid, password)
+
+    try:
+        sta_if.connect(ssid, password)
+    except Exception as err:
+        print("Failed to start connection:", err)
+        return False
+
+    connected = False
     for retry in range(100):
         connected = sta_if.isconnected()
         if connected:
             break
         time.sleep(0.1)
     if connected:
+        try:
+            sta_if.config(pm=0)
+        except Exception:
+            pass
         print('\nConnected. Network config: ', sta_if.ifconfig())
         
     else:

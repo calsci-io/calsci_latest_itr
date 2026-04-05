@@ -4,6 +4,7 @@
 import utime as time  # type:ignore
 from math import *
 import machine
+from data_modules.math_symbols import PI_CHAR
 from data_modules.object_handler import display, nav, typer, keypad_state_manager, form, form_refresh
 from process_modules import boot_up_data_update
 from data_modules.object_handler import current_app, data_bucket
@@ -11,7 +12,7 @@ from data_modules.object_handler import current_app, data_bucket
 
 def constants(db={}):
     constant_symbols_and_values = [
-        "pi", "Pi", "3.141592653589793",
+        PI_CHAR, "Pi", "3.141592653589793",
         "e", "Euler’s Number", "2.718281828459045",
         "g", "Gravitational Acceleration", "9.80665",
         "G", "Gravitational Constant", "6.67430e-11",

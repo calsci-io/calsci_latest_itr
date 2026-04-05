@@ -10,8 +10,10 @@ except Exception:
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
+from data_modules.math_symbols import normalize_pi_token
+
 class Textbuffer:
-    def __init__(self, text_buffer="𖤓", rows=7, cols=21):
+    def __init__(self, text_buffer="𖤓", rows=8, cols=21):
         if text_buffer != "𖤓":
             text_buffer += "𖤓"
         self.text_buffer = text_buffer
@@ -36,8 +38,18 @@ class Textbuffer:
         self.ac = False
         self.retain_data = False
 
-    def buffer(self):
+    def _raw_text_buffer(self):
+        sentinel_index = self.text_buffer.find("𖤓")
+        if sentinel_index < 0:
+            return self.text_buffer + "𖤓"
+        return self.text_buffer[:sentinel_index] + "𖤓"
 
+    def value(self):
+        return self._raw_text_buffer()[:-1]
+
+    def buffer(self):
+        self.text_buffer = self._raw_text_buffer()
+        display_text = self.text_buffer
         self.buffer_length = len(self.text_buffer)
         self.text_buffer_nospace = len(self.text_buffer) - 1
         remaining_spaces = (
@@ -48,12 +60,12 @@ class Textbuffer:
         self.no_last_spaces = remaining_spaces
 
         if remaining_spaces > 0:
-            self.text_buffer += " " * remaining_spaces
+            display_text += " " * remaining_spaces
         self.menu_buffer_size = self.buffer_length + remaining_spaces
         total_buffer_size = self.rows * self.cols
         if self.menu_buffer_size < total_buffer_size:
             self.extra_spaces = total_buffer_size - self.menu_buffer_size
-            self.text_buffer += " " * self.extra_spaces
+            display_text += " " * self.extra_spaces
             self.menu_buffer_size = self.menu_buffer_size + self.extra_spaces
         else:
             self.extra_spaces = 0
@@ -66,7 +78,7 @@ class Textbuffer:
         new_rows_list = []
 
         for i in range(self.rows):
-            rownew = self.text_buffer[
+            rownew = display_text[
                 self.display_buffer[self.cols * i] : self.display_buffer[
                     self.cols * i + self.cols - 1
                 ]
@@ -76,6 +88,7 @@ class Textbuffer:
         return new_rows_list
 
     def update_buffer(self, text):
+        text = normalize_pi_token(text)
         self.ac = False
         self.refresh_area = (0, self.rows * self.cols)
         past_buffer_cursor = self.menu_buffer_cursor

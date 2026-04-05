@@ -12,17 +12,18 @@ import st7565 as display
 
 import utime
 from machine import Pin  # type: ignore
-from data_modules.object_handler import app
+from data_modules.object_handler import keymap, keypad_state_manager_reset
 
 from dino_game.game import DinoGame
+from process_modules.navigation import request_navigation_from_key
 
 
 _ROWS = [14, 21, 47, 48, 38, 39, 40, 41, 42, 1]
 _COLS = [8, 18, 17, 15, 7]
 
-JUMP_KEY = (4, 2)
-DUCK_KEY = (1, 2)
-BACK_KEY = (1, 1)
+JUMP_KEY = "nav_u"
+DUCK_KEY = "nav_d"
+NAVIGATION_KEYS = ("home", "settings", "back")
 
 
 def _init_keypad():
@@ -46,28 +47,29 @@ def _scan_key():
 
 def _read_input():
     key = _scan_key()
-    return key == JUMP_KEY, key == DUCK_KEY, key == BACK_KEY
+    if key is None:
+        return False, False, False
 
+    key_name = keymap.key_out(col=int(key[0]), row=int(key[1]))
+    if key_name in NAVIGATION_KEYS:
+        request_navigation_from_key(key_name)
 
-def _exit_to_installed_apps():
-    display.clear_display()
-    app.set_app_name("installed_apps")
-    app.set_group_name("root")
+    return key_name == JUMP_KEY, key_name == DUCK_KEY, False
 
 
 def dino():
+    keypad_state_manager_reset()
     _init_keypad()
     game = DinoGame(display=display, read_input=_read_input)
 
-    while True:
-        should_start = game.splash_screen()
-        if not should_start:
-            _exit_to_installed_apps()
-            return
-
-        result = game.play_round()
-        if result is None:
-            _exit_to_installed_apps()
-            return
-
-        utime.sleep_ms(200)
+    try:
+        while True:
+            result = game.play_round()
+            if result is None:
+                request_navigation_from_key("back")
+            utime.sleep_ms(200)
+    finally:
+        try:
+            game._set_inverse(False)
+        except Exception:
+            pass

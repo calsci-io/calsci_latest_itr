@@ -10,23 +10,25 @@ except Exception:
 # Copyright (c) 2025 CalSci
 # Licensed under the MIT License.
 
+from data_modules.math_symbols import PI_CHAR
+
 class Keypad_5X8:
     def __init__(self, state="d"):
         keypad_5X8_layout_default=[
-            ["on", "alpha", "beta", "home", "wifi"],
-            ["backlight", "back", "toolbox", "diff()", "ln()"],
+            ["on", "home", "settings", "back", "lock"],
+            ["beta", "alpha", "toolbox", "fraction", "F1"],
             ["nav_l", "nav_d", "nav_r", "ok", "nav_u"],
-            ["module", "bluetooth", "sin()", "cos()", "tan()"],
-            ["igtn()", "pi", "e", "summation", "fraction"],
-            ["log", "pow(,)", "pow( ,0.5)", "pow( ,2)", "S_D"],
+            [PI_CHAR, "log", "sin", "cos", "tan"],
+            ["pow", "root", ",", "(", ")"],
+            ["F2", "F3", "F4", "F5", "F6"],
             ["7", "8", "9", "nav_b", "AC"],
             ["4", "5", "6", "*", "/"],
             ["1", "2", "3", "+", "-"],
-            [".", "0", ",", "ans", "exe"]
+            [".", "0", "*pow(10, )", "ans", "exe"]
         ]
         keypad_5X8_layout_alpha=[
-            ["on", "alpha", "beta", "home", "wifi"],
-            ["backlight", "back", "caps", "f", "l"],
+            ["on", "home", "settings", "back", "lock"],
+            ["beta", "alpha", "caps", "f", "l"],
             ["nav_l", "nav_d", "nav_r", "ok", "nav_u"],
             ["a", "b", "c", "d", "e"],
             ["g", "h", "i", "j", "k"],
@@ -34,23 +36,23 @@ class Keypad_5X8:
             ["r", "s", "t", "nav_b", "AC"],
             ["u", "v", "w", "*", "/"],
             ["x", "y", "z", "+", "-"],
-            [" ", "off", "tab", "ans", "exe"]
+            ["tab", " ", "", "ans", "exe"]
         ]
         keypad_5X8_layout_beta=[
-            ["on", "alpha", "beta", "home", "wifi"],
-            ["backlight", "back", "undo", "=", "$"],
+            ["on", "home", "settings", "back", "lock"],
+            ["beta", "alpha", "undo", "=", "$"],
             ["nav_l", "nav_d", "nav_r", "ok", "nav_u"],
-            ["copy", "paste", "asin(", "acos(", "atan("],
-            ["&", "`", '"', "'", "shot"],
+            ["copy", "paste", "asin", "acos", "atan"],
+            ["&", "`", '"', "'", "\\"],
             ["^", "~", "!", "<", ">"],
             ["[", "]", "%", "nav_b", "AC"],
             ["{", "}", ":", "*", "/"],
-            ["(", ")", ";", "+", "-"],
-            ["@", "?", "\"", "ans", "exe"]
+            ["#", "|", ";", "+", "-"],
+            ["@", "?", "_", "ans", "exe"]
         ]
         keypad_5X8_layout_ALPHA=[
-            ["on", "alpha", "beta", "home", "wifi"],
-            ["backlight", "back", "caps", "F", "L"],
+            ["on", "home", "settings", "back", "lock"],
+            ["beta", "alpha", "caps", "F", "L"],
             ["nav_l", "nav_d", "nav_r", "ok", "nav_u"],
             ["A", "B", "C", "D", "E"],
             ["G", "H", "I", "J", "K"],
@@ -58,7 +60,7 @@ class Keypad_5X8:
             ["R", "S", "T", "nav_b", "AC"],
             ["U", "V", "W", "*", "/"],
             ["X", "Y", "Z", "+", "-"],
-            [" ", "off", "tab", "ans", "exe"]
+            ["tab", " ", "", "ans", "exe"]
         ]
 
         self.state=state

@@ -1,21 +1,6 @@
 [
     {
-        "name": "backlight",
-        "folder": "settings",
-        "visibility": true
-    },
-    {
-        "name": "wifi_app",
-        "folder": "settings",
-        "visibility": true
-    },
-    {
-        "name": "wifi_connector",
-        "folder": "settings",
-        "visibility": false
-    },
-    {
-        "name": "network_status",
+        "name": "wifi_center",
         "folder": "settings",
         "visibility": true
     },
@@ -35,22 +20,7 @@
         "visibility": false
     },
     {
-        "name": "Dark_Mode",
-        "folder": "settings",
-        "visibility": true
-    },
-    {
-        "name": "download_updates",
-        "folder": "settings",
-        "visibility": true
-    },
-    {
         "name": "mac_address",
-        "folder": "settings",
-        "visibility": true
-    },
-    {
-        "name": "wifi_autoconnect",
         "folder": "settings",
         "visibility": true
     },

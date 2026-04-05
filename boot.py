@@ -17,17 +17,6 @@ display.graphics(cal_sci_buffer)
 # display.write_instruction(0x81) #for only 3.0
 # display.write_instruction(0x06)
 gc.enable()
-print("free ram initially=", gc.mem_free())
-print("ram allocated initially=", gc.mem_alloc())
-
-# --- Triple Boot System ---
-print("=================================")
-print("  CalSci - Triple Boot System")
-print("=================================")
-print("  boot.switch_to_cpp()   - Reboot into C++")
-print("  boot.switch_to_rust()  - Reboot into Rust")
-print("  boot.boot_info()       - Show current partition")
-print("=================================")
 
 
 def boot_info():
@@ -103,16 +92,21 @@ def _switch_to(label, name):
         part.set_boot()
         print("Next boot:", name, "(" + label + ")")
         display.clear_display()
-        menu.menu_list = ["Switching to:", name, "Rebooting..."]
-        menu.update()
-        menu_refresh.refresh()
+        try:
+            from data_modules.object_handler import menu, menu_refresh
+
+            menu.menu_list = ["Switching to:", name, "Rebooting..."]
+            menu.update()
+            menu_refresh.refresh()
+        except Exception:
+            pass
         print("Restarting in 1 second...")
         _time.sleep(1)
         machine.reset()
     except Exception as e:
         print("Error switching to", label, ":", e)
 # --- End Triple Boot System ---
-from apps.settings.backlight import backlight_pin
+backlight_pin = machine.Pin(5, machine.Pin.OUT)
 # backlight_pin.off() #3.0
 backlight_pin.on() #2.9
 # from test_thread import run_thread
@@ -121,19 +115,63 @@ backlight_pin.on() #2.9
 # from test_async import main
 # asyncio.run(main())
 import builtins
-from data_modules.object_handler import text, menu, form, text_refresh, menu_refresh, form_refresh, typer, data_bucket
-builtins.display=display
-builtins.text=text
-builtins.menu=menu
-builtins.form=form
-builtins.text_refresh=text_refresh
-builtins.text_refresh=menu_refresh
-builtins.text_refresh=form_refresh
-builtins.typer=typer
+from data_modules.object_handler import data_bucket, sta_if
+
+builtins.display = display
+
+# Auto WiFi connect at boot (respects settings.auto_wifi_connect).
+builtins.sta_if = sta_if
+
+try:
+    import _thread
+except Exception:
+    _thread = None
 
 
+def _sync_wifi_status_from_sta():
+    try:
+        connected = bool(sta_if.isconnected())
+    except Exception:
+        connected = False
 
-# WiFi startup disabled for fast boot.
-builtins.sta_if = None
-data_bucket["connection_status_g"] = False
-data_bucket["ssid_g"] = ""
+    data_bucket["connection_status_g"] = connected
+    if connected:
+        try:
+            ssid_now = sta_if.config("essid")
+            data_bucket["ssid_g"] = ssid_now if isinstance(ssid_now, str) else ""
+        except Exception:
+            data_bucket["ssid_g"] = ""
+    else:
+        data_bucket["ssid_g"] = ""
+
+
+def _auto_wifi_boot_task():
+    try:
+        from process_modules.auto_wifi_connector import auto_wifi_connector
+        auto_wifi_connector()
+    except Exception as err:
+        print("Auto WiFi init failed:", err)
+    finally:
+        _sync_wifi_status_from_sta()
+
+    if not data_bucket.get("connection_status_g"):
+        return
+
+    try:
+        from process_modules.wireless_transfer import ensure_service
+
+        ensure_service(force_restart=False)
+    except Exception as err:
+        print("Wireless REPL init failed:", err)
+
+
+# Seed status quickly, then connect in background so boot UI is not blocked.
+_sync_wifi_status_from_sta()
+if _thread is not None:
+    try:
+        _thread.start_new_thread(_auto_wifi_boot_task, ())
+    except Exception as err:
+        print("Auto WiFi thread start failed:", err)
+        _auto_wifi_boot_task()
+else:
+    _auto_wifi_boot_task()

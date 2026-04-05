@@ -14,8 +14,6 @@ except Exception:
 import json
 import machine
 from data_modules.object_handler import current_app, nav, keypad_state_manager, menu, menu_refresh, typer, keymap, display
-from apps.settings.backlight import backlight, backlight_pin
-from apps.settings.dark_mode import dark_mode
 from process_modules import boot_up_data_update
 from data_modules.object_handler import app
 
@@ -52,10 +50,6 @@ def settings():
             elif inp_menu == "off":
                 boot_up_data_update.main()
                 machine.deepsleep()
-            elif inp_menu =="ok" and menu.menu_list[menu.menu_cursor] in ["backlight"]:
-                backlight()
-            elif inp_menu =="ok" and menu.menu_list[menu.menu_cursor] in ["Dark_Mode"]:
-                dark_mode()
             elif inp_menu =="ok":
                 # current_app[0]=menu.menu_list[menu.menu_cursor]
                 # current_app[1] = "settings"

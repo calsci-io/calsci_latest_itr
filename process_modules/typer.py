@@ -1,8 +1,11 @@
 # from data_modules.object_handler import test_deep_sleep_awake
 from sleeping_features import test_deep_sleep_awake, swdt
+import builtins
 import time
 import machine
 from machine import Pin
+from process_modules.navigation import request_navigation_from_key
+from process_modules.keypad_modes import reset_mode, should_auto_reset_after_input, toggle_mode_lock
 
 try:
     import esp32
@@ -11,9 +14,10 @@ except Exception:
 
 
 class Typer:
-    def __init__(self, keypad, keypad_map):
+    def __init__(self, keypad, keypad_map, nav=None):
         self.keypad = keypad
         self.keypad_map = keypad_map
+        self.nav = nav
         self.debounce_delay_time = 0.2
         self.min_debounce_delay_time = 0.12
         self._switch_latched_key = None
@@ -194,17 +198,40 @@ class Typer:
         names = {0: "MicroPython", 1: "C++", 2: "Rust"}
         self._switch_to_partition("ota_{}".format(target_slot), names[target_slot])
 
+    def _idle_tasks(self):
+        if self.nav is not None:
+            self.nav.maybe_hide()
+        try:
+            form_refresh = getattr(builtins, "form_refresh", None)
+            if form_refresh is not None and hasattr(form_refresh, "idle"):
+                form_refresh.idle()
+        except Exception:
+            pass
+
     def start_typing(self):
         time.sleep(self.debounce_delay_time)
         try:
-            key_inp = self.keypad.keypad_loop()
+            key_inp = self.keypad.keypad_loop(idle_callback=self._idle_tasks)
             col = int(key_inp[0])
             row = int(key_inp[1])
             self._handle_live_switch_shortcut(row=row, col=col)
             text = self.keypad_map.key_out(col=col, row=row)
             swdt.feed()
-            if text == "off":
+            if text in ("off", "on"):
                 test_deep_sleep_awake()
+                return "off"
+            if text in ("home", "settings", "back"):
+                request_navigation_from_key(text)
+            if text == "lock":
+                if self.nav is not None:
+                    toggle_mode_lock(keymap=self.keypad_map, nav=self.nav)
+                return ""
+            if self.nav is not None and should_auto_reset_after_input(
+                keymap=self.keypad_map,
+                nav=self.nav,
+                key_name=text,
+            ):
+                reset_mode(keymap=self.keypad_map, nav=self.nav)
             return text
         except Exception:
             swdt.stop()

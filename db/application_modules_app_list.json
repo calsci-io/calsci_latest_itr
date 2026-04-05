@@ -20,6 +20,11 @@
         "visibility": true
     },
     {
+        "name": "stream_deck",
+        "folder": "application_modules",
+        "visibility": false
+    },
+    {
         "name": "installed_apps",
         "folder": "application_modules",
         "visibility": true
@@ -27,15 +32,10 @@
     {
         "name": "scientific_calculator",
         "folder":"application_modules",
-        "visibility": true
+        "visibility": false
     },
     {
         "name": "function_locker",
-        "folder":"application_modules",
-        "visibility": true
-    },
-    {
-        "name": "latex_calc",
         "folder":"application_modules",
         "visibility": true
     }

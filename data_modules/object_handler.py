@@ -24,6 +24,7 @@ from process_modules.form_buffer_uploader import Tbf as form_tbf
 from process_modules.typer import Typer
 from input_modules.keypad import Keypad
 from data_modules.keypad_map import Keypad_5X8
+from process_modules.keypad_modes import handle_mode_key, reset_mode
 
 # from output_modules.st7565_spi import Display
 # import st7565 as display
@@ -33,20 +34,59 @@ from process_modules.navbar import Nav
 
 from process_modules.app import App
 
-from process_modules.app_downloader import Apps
-
 # import esp32
 # import time
 import network
 # import espnow
-sta_if=network.WLAN(network.STA_IF)
-ap_if=network.WLAN(network.AP_IF)
-sta_if.active(True)
-ap_if.active(True)
-sta_if.config(hostname="CalSci")
-ap_if.config(ssid="CalSci")
-sta_if.active(False)
-ap_if.active(False)
+
+
+def _configure_wlan(iface, iface_type):
+    try:
+        if iface_type == network.STA_IF:
+            iface.config(hostname="CalSci")
+            try:
+                iface.config(pm=0)
+            except Exception:
+                pass
+        elif iface_type == network.AP_IF:
+            iface.config(ssid="CalSci")
+    except Exception:
+        pass
+
+
+class LazyWLAN:
+    def __init__(self, iface_type):
+        self._iface_type = iface_type
+        self._iface = None
+
+    def _get(self):
+        if self._iface is None:
+            iface = network.WLAN(self._iface_type)
+            _configure_wlan(iface, self._iface_type)
+            self._iface = iface
+        return self._iface
+
+    def __getattr__(self, name):
+        return getattr(self._get(), name)
+
+
+class LazyAppsInstaller:
+    def __init__(self):
+        self._apps = None
+
+    def _get(self):
+        if self._apps is None:
+            from process_modules.app_downloader import Apps
+
+            self._apps = Apps()
+        return self._apps
+
+    def __getattr__(self, name):
+        return getattr(self._get(), name)
+
+
+sta_if = LazyWLAN(network.STA_IF)
+ap_if = LazyWLAN(network.AP_IF)
 # e = espnow.ESPNow()
 current_app=["home", ""]
 data_bucket={"ssid_g" : "", "connection_status_g" : False}
@@ -64,10 +104,14 @@ display=display
 # import display
 keymap = Keypad_5X8()
 keyin = Keypad(rows=keypad_rows, cols=keypad_cols)
-typer = Typer(keypad=keyin, keypad_map=keymap)
 
 chrs=Characters()
 builtins.chrs=chrs
+
+nav = Nav(disp_out=display, chrs=chrs)
+builtins.nav=nav
+
+typer = Typer(keypad=keyin, keypad_map=keymap, nav=nav)
 
 text=Textbuffer()
 menu=Menu()
@@ -78,42 +122,27 @@ builtins.form=form
 
 builtins.typer=typer
 
-nav = Nav(disp_out=display, chrs=chrs)
-builtins.nav=nav
-
-text_refresh=text_tbf(disp_out=display, chrs=chrs, t_b=text)
-menu_refresh=menu_tbf(disp_out=display, chrs=chrs, m_b=menu)
-form_refresh=form_tbf(disp_out=display, chrs=chrs, f_b=form)
+text_refresh=text_tbf(disp_out=display, chrs=chrs, t_b=text, nav=nav)
+menu_refresh=menu_tbf(disp_out=display, chrs=chrs, m_b=menu, nav=nav)
+form_refresh=form_tbf(disp_out=display, chrs=chrs, f_b=form, nav=nav)
 builtins.text_refresh=text_refresh
 builtins.menu_refresh=menu_refresh
 builtins.form_refresh=form_refresh
 
 app=App()
-builtins.app=App()
+builtins.app=app
 
 mac_str = ''.join('{:02X}'.format(b) for b in machine.unique_id())
 builtins.mac_str=mac_str
 
-apps_installer=Apps()
+apps_installer=LazyAppsInstaller()
 builtins.apps_installer=apps_installer
 
 def keypad_state_manager(x):
-    if keymap.state == "a" and x[0] == "a":
-        keymap.key_change(state="d")
-        nav.state_change(state="d")
-    elif keymap.state == "b" and x[0] == "b":
-        keymap.key_change(state="d")
-        nav.state_change(state="d")
-    elif keymap.state == "A" and x[0] == "A":
-        keymap.key_change(state="d")
-        nav.state_change(state="d")
-    else:
-        keymap.key_change(state=x[0])
-        nav.state_change(state=x[0])
+    handle_mode_key(keymap=keymap, nav=nav, key_name=x)
 
 def keypad_state_manager_reset():
-    keymap.key_change(state="d")
-    nav.state_change(state="d")
+    reset_mode(keymap=keymap, nav=nav)
 
 
 # def test_deep_sleep_awake():
