@@ -10,6 +10,11 @@
         "visibility": true
     },
     {
+        "name": "graph",
+        "folder": "application_modules",
+        "visibility": true
+    },
+    {
         "name": "settings",
         "folder": "application_modules",
         "visibility": true
