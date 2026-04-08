@@ -141,8 +141,8 @@ PLOT_NAVBAR_SCROLL_GAP_PX = CHAR_ADVANCE * 3
 ZOOM_IN_FACTOR = 0.9
 ZOOM_OUT_FACTOR = 1.1
 PAN_SHIFT_FACTOR = 0.09       #  set 
-INPUT_POLL_MS = 0.5
-INPUT_POLL_SEC = INPUT_POLL_MS / 1000.0
+GRAPH_FORM_DEBOUNCE_SEC = 0.09
+PLOT_DEBOUNCE_SEC = 0.0
 FAST_POLL_RESUME_DELAY_MS = 500
 BACK_KEY_GUARD_MS = 180
 BACK_KEY_GUARD_EXTRA_MS = 120
@@ -163,6 +163,18 @@ TOOLBOX_BOX_Y = MENU_BOX_Y
 TOOLBOX_BOX_W = MENU_BOX_W
 TOOLBOX_BOX_H = 47
 OLD_GRAPH_SCROLLBAR_RIGHT_GAP = 2
+
+
+def _push_debounce_delay(delay_sec):
+    previous_delay = getattr(typer, "debounce_delay_time", None)
+    if previous_delay is not None:
+        typer.debounce_delay_time = delay_sec
+    return previous_delay
+
+
+def _restore_debounce_delay(previous_delay):
+    if previous_delay is not None:
+        typer.debounce_delay_time = previous_delay
 
 
 class OldGraphFormTbf(FormTbf):
@@ -2856,57 +2868,61 @@ def _draw_toolbox_menu(fb, fb_buf, selected_item, tool_state, graph_state, reset
 
 
 def _open_toolbox_menu(fb, fb_buf, tool_state, graph_state, cursor, bounds, reset_bounds=None):
+    prev_debounce = _push_debounce_delay(GRAPH_FORM_DEBOUNCE_SEC)
     if tool_state.mode in TOOL_MENU_ITEMS:
         selected_item = tool_state.mode
     else:
         selected_item = TOOL_AREA
     ignore_open_key = True
 
-    while True:
-        entries = _toolbox_menu_entries(tool_state, graph_state, reset_bounds)
-        if selected_item not in entries:
-            selected_item = entries[0]
-        _draw_toolbox_menu(fb, fb_buf, selected_item, tool_state, graph_state, reset_bounds)
-        key = _start_typing_with_navigation_fallback(consume_local_back=True)
+    try:
+        while True:
+            entries = _toolbox_menu_entries(tool_state, graph_state, reset_bounds)
+            if selected_item not in entries:
+                selected_item = entries[0]
+            _draw_toolbox_menu(fb, fb_buf, selected_item, tool_state, graph_state, reset_bounds)
+            key = _start_typing_with_navigation_fallback(consume_local_back=True)
 
-        if ignore_open_key and key == "toolbox":
-            ignore_open_key = False
-            continue
-        ignore_open_key = False
-
-        if key == "nav_u":
-            idx = entries.index(selected_item)
-            selected_item = entries[(idx - 1) % len(entries)]
-        elif key == "nav_d":
-            idx = entries.index(selected_item)
-            selected_item = entries[(idx + 1) % len(entries)]
-        elif key == "nav_l" and selected_item == TOOLBOX_GRAPH_SELECTOR:
-            if tool_state.cycle_graph(graph_state, -1, cursor, bounds):
-                selected_tool = tool_state.selected_feature()
-                if selected_tool is not None and selected_tool.graph_index is not None:
-                    graph_state["focus_graph_index"] = selected_tool.graph_index
-        elif key == "nav_r" and selected_item == TOOLBOX_GRAPH_SELECTOR:
-            if tool_state.cycle_graph(graph_state, 1, cursor, bounds):
-                selected_tool = tool_state.selected_feature()
-                if selected_tool is not None and selected_tool.graph_index is not None:
-                    graph_state["focus_graph_index"] = selected_tool.graph_index
-        elif key == "ok":
-            if selected_item == TOOLBOX_GRAPH_SELECTOR:
+            if ignore_open_key and key == "toolbox":
+                ignore_open_key = False
                 continue
-            if selected_item == TOOLBOX_RESET_VIEW:
-                return TOOLBOX_RESET_VIEW
-            if tool_state.active and tool_state.mode == selected_item:
-                return TOOLBOX_CLEAR_SELECTION
-            return selected_item
-        elif key in ("AC", "nav_b", "-"):
-            if tool_state.active:
-                return TOOLBOX_CLEAR_SELECTION
-        elif key == "back":
-            return TOOLBOX_CANCEL_BACK
-        elif key == "home":
-            return "home"
-        elif key in ("alpha", "beta"):
-            keypad_state_manager(x=key)
+            ignore_open_key = False
+
+            if key == "nav_u":
+                idx = entries.index(selected_item)
+                selected_item = entries[(idx - 1) % len(entries)]
+            elif key == "nav_d":
+                idx = entries.index(selected_item)
+                selected_item = entries[(idx + 1) % len(entries)]
+            elif key == "nav_l" and selected_item == TOOLBOX_GRAPH_SELECTOR:
+                if tool_state.cycle_graph(graph_state, -1, cursor, bounds):
+                    selected_tool = tool_state.selected_feature()
+                    if selected_tool is not None and selected_tool.graph_index is not None:
+                        graph_state["focus_graph_index"] = selected_tool.graph_index
+            elif key == "nav_r" and selected_item == TOOLBOX_GRAPH_SELECTOR:
+                if tool_state.cycle_graph(graph_state, 1, cursor, bounds):
+                    selected_tool = tool_state.selected_feature()
+                    if selected_tool is not None and selected_tool.graph_index is not None:
+                        graph_state["focus_graph_index"] = selected_tool.graph_index
+            elif key == "ok":
+                if selected_item == TOOLBOX_GRAPH_SELECTOR:
+                    continue
+                if selected_item == TOOLBOX_RESET_VIEW:
+                    return TOOLBOX_RESET_VIEW
+                if tool_state.active and tool_state.mode == selected_item:
+                    return TOOLBOX_CLEAR_SELECTION
+                return selected_item
+            elif key in ("AC", "nav_b", "-"):
+                if tool_state.active:
+                    return TOOLBOX_CLEAR_SELECTION
+            elif key == "back":
+                return TOOLBOX_CANCEL_BACK
+            elif key == "home":
+                return "home"
+            elif key in ("alpha", "beta"):
+                keypad_state_manager(x=key)
+    finally:
+        _restore_debounce_delay(prev_debounce)
 
 
 def _draw_used_tools_menu(fb, fb_buf, tool_state, bounds, selected_index, scroll_index, graph_state=None):
@@ -2940,60 +2956,64 @@ def _draw_used_tools_menu(fb, fb_buf, tool_state, bounds, selected_index, scroll
 
 
 def _open_used_tools_menu(fb, fb_buf, tool_state, bounds, graph_state=None):
+    prev_debounce = _push_debounce_delay(GRAPH_FORM_DEBOUNCE_SEC)
     selected_index = tool_state.selected_index if tool_state.selected_index is not None else 0
     scroll_index = 0
     changed = False
     ignore_open_key = True
 
-    while True:
-        total = len(tool_state.features)
-        if total > 0:
-            if selected_index < 0:
+    try:
+        while True:
+            total = len(tool_state.features)
+            if total > 0:
+                if selected_index < 0:
+                    selected_index = 0
+                elif selected_index >= total:
+                    selected_index = total - 1
+
+                if selected_index < scroll_index:
+                    scroll_index = selected_index
+                elif selected_index >= scroll_index + 3:
+                    scroll_index = selected_index - 2
+            else:
                 selected_index = 0
-            elif selected_index >= total:
-                selected_index = total - 1
+                scroll_index = 0
 
-            if selected_index < scroll_index:
-                scroll_index = selected_index
-            elif selected_index >= scroll_index + 3:
-                scroll_index = selected_index - 2
-        else:
-            selected_index = 0
-            scroll_index = 0
+            _draw_used_tools_menu(
+                fb,
+                fb_buf,
+                tool_state,
+                bounds,
+                selected_index,
+                scroll_index,
+                graph_state=graph_state,
+            )
+            key = _start_typing_with_navigation_fallback(consume_local_back=True)
 
-        _draw_used_tools_menu(
-            fb,
-            fb_buf,
-            tool_state,
-            bounds,
-            selected_index,
-            scroll_index,
-            graph_state=graph_state,
-        )
-        key = _start_typing_with_navigation_fallback(consume_local_back=True)
-
-        if ignore_open_key and key == ",":
+            if ignore_open_key and key == ",":
+                ignore_open_key = False
+                continue
             ignore_open_key = False
-            continue
-        ignore_open_key = False
 
-        if key == "nav_u" and total > 0:
-            selected_index = (selected_index - 1) % total
-        elif key == "nav_d" and total > 0:
-            selected_index = (selected_index + 1) % total
-        elif key in ("ok", "exe") and total > 0:
-            if tool_state.select_index(selected_index):
+            if key == "nav_u" and total > 0:
+                selected_index = (selected_index - 1) % total
+            elif key == "nav_d" and total > 0:
+                selected_index = (selected_index + 1) % total
+            elif key in ("ok", "exe") and total > 0:
+                if tool_state.select_index(selected_index):
+                    changed = True
+                return changed
+            elif key in ("AC", "nav_b", "-") and total > 0:
+                tool_state.remove_index(selected_index)
                 changed = True
-            return changed
-        elif key in ("AC", "nav_b", "-") and total > 0:
-            tool_state.remove_index(selected_index)
-            changed = True
-        elif key in ("back", ",", "toolbox"):
-            return changed
-        elif key == "home":
-            return "home"
-        elif key in ("alpha", "beta"):
-            keypad_state_manager(x=key)
+            elif key in ("back", ",", "toolbox"):
+                return changed
+            elif key == "home":
+                return "home"
+            elif key in ("alpha", "beta"):
+                keypad_state_manager(x=key)
+    finally:
+        _restore_debounce_delay(prev_debounce)
 
 
 def _draw_graph_config_shell(fb, title):
@@ -3178,6 +3198,7 @@ def _parse_window_form_values():
 
 
 def _edit_view_window(rect_bounds, polar_bounds, on_change=None):
+    prev_debounce = _push_debounce_delay(GRAPH_FORM_DEBOUNCE_SEC)
     previous_form = _capture_form_state()
     status_text = [""]
     last_valid = [
@@ -3236,9 +3257,11 @@ def _edit_view_window(rect_bounds, polar_bounds, on_change=None):
             _refresh_window_form()
     finally:
         _restore_form_state(previous_form)
+        _restore_debounce_delay(prev_debounce)
 
 
 def _open_graph_config_menu(fb, fb_buf, graph_state, graph_index):
+    prev_debounce = _push_debounce_delay(GRAPH_FORM_DEBOUNCE_SEC)
     graph = graph_state["graphs"][graph_index]
     temp_graph = {
         "type": graph.get("type", GRAPH_TYPE_RECT),
@@ -3263,55 +3286,58 @@ def _open_graph_config_menu(fb, fb_buf, graph_state, graph_index):
         temp_polar.update(_copy_polar_bounds(polar_bounds_value))
         _commit_graph_config()
 
-    while True:
-        _draw_graph_config_menu(fb, fb_buf, graph_index, temp_graph)
-        key = _start_typing_with_navigation_fallback(consume_local_back=True)
+    try:
+        while True:
+            _draw_graph_config_menu(fb, fb_buf, graph_index, temp_graph)
+            key = _start_typing_with_navigation_fallback(consume_local_back=True)
 
-        if ignore_open_key and key == "toolbox":
+            if ignore_open_key and key == "toolbox":
+                ignore_open_key = False
+                continue
             ignore_open_key = False
-            continue
-        ignore_open_key = False
 
-        if key == "nav_u":
-            temp_graph["_selected_row"] = (temp_graph["_selected_row"] - 1) % 3
-        elif key == "nav_d":
-            temp_graph["_selected_row"] = (temp_graph["_selected_row"] + 1) % 3
-        elif key == "nav_l":
-            if temp_graph["_selected_row"] == HOME_TOOLBOX_TYPE_ROW:
-                temp_graph["type"] = _cycle_sequence_value(GRAPH_TYPES, temp_graph["type"], -1)
-                _commit_graph_config()
-            elif temp_graph["_selected_row"] == HOME_TOOLBOX_STYLE_ROW:
-                temp_graph["style"] = _cycle_sequence_value(GRAPH_STYLES, temp_graph["style"], -1)
-                _commit_graph_config()
-        elif key == "nav_r":
-            if temp_graph["_selected_row"] == HOME_TOOLBOX_TYPE_ROW:
-                temp_graph["type"] = _cycle_sequence_value(GRAPH_TYPES, temp_graph["type"], 1)
-                _commit_graph_config()
-            elif temp_graph["_selected_row"] == HOME_TOOLBOX_STYLE_ROW:
-                temp_graph["style"] = _cycle_sequence_value(GRAPH_STYLES, temp_graph["style"], 1)
-                _commit_graph_config()
-        elif key in ("ok", "exe"):
-            if temp_graph["_selected_row"] == HOME_TOOLBOX_WINDOW_ROW:
-                view_window = _edit_view_window(
-                    temp_rect,
-                    temp_polar,
-                    on_change=_commit_window_bounds,
-                )
-                if view_window == "home":
-                    return "home"
-                if view_window is None:
-                    continue
-                temp_rect, temp_polar = view_window
-                _commit_graph_config()
-            else:
-                _commit_graph_config()
-                return True
-        elif key in ("back", "toolbox"):
-            return False
-        elif key == "home":
-            return "home"
-        elif key in ("alpha", "beta"):
-            keypad_state_manager(x=key)
+            if key == "nav_u":
+                temp_graph["_selected_row"] = (temp_graph["_selected_row"] - 1) % 3
+            elif key == "nav_d":
+                temp_graph["_selected_row"] = (temp_graph["_selected_row"] + 1) % 3
+            elif key == "nav_l":
+                if temp_graph["_selected_row"] == HOME_TOOLBOX_TYPE_ROW:
+                    temp_graph["type"] = _cycle_sequence_value(GRAPH_TYPES, temp_graph["type"], -1)
+                    _commit_graph_config()
+                elif temp_graph["_selected_row"] == HOME_TOOLBOX_STYLE_ROW:
+                    temp_graph["style"] = _cycle_sequence_value(GRAPH_STYLES, temp_graph["style"], -1)
+                    _commit_graph_config()
+            elif key == "nav_r":
+                if temp_graph["_selected_row"] == HOME_TOOLBOX_TYPE_ROW:
+                    temp_graph["type"] = _cycle_sequence_value(GRAPH_TYPES, temp_graph["type"], 1)
+                    _commit_graph_config()
+                elif temp_graph["_selected_row"] == HOME_TOOLBOX_STYLE_ROW:
+                    temp_graph["style"] = _cycle_sequence_value(GRAPH_STYLES, temp_graph["style"], 1)
+                    _commit_graph_config()
+            elif key in ("ok", "exe"):
+                if temp_graph["_selected_row"] == HOME_TOOLBOX_WINDOW_ROW:
+                    view_window = _edit_view_window(
+                        temp_rect,
+                        temp_polar,
+                        on_change=_commit_window_bounds,
+                    )
+                    if view_window == "home":
+                        return "home"
+                    if view_window is None:
+                        continue
+                    temp_rect, temp_polar = view_window
+                    _commit_graph_config()
+                else:
+                    _commit_graph_config()
+                    return True
+            elif key in ("back", "toolbox"):
+                return False
+            elif key == "home":
+                return "home"
+            elif key in ("alpha", "beta"):
+                keypad_state_manager(x=key)
+    finally:
+        _restore_debounce_delay(prev_debounce)
 
 def draw_cursor_overlay(fb, cursor, bounds, eval_fn, plot_height, tool_state=None, graph_state=None):
     tool_active = tool_state is not None and tool_state.active
@@ -3589,9 +3615,13 @@ def old_graph(db={}):
 
     prev_debounce = getattr(typer, "debounce_delay_time", None)
 
-    def _set_fast_poll():
+    def _set_form_poll():
         if prev_debounce is not None:
-            typer.debounce_delay_time = INPUT_POLL_SEC
+            typer.debounce_delay_time = GRAPH_FORM_DEBOUNCE_SEC
+
+    def _set_plot_poll():
+        if prev_debounce is not None:
+            typer.debounce_delay_time = PLOT_DEBOUNCE_SEC
 
     def _restore_default_poll():
         if prev_debounce is not None:
@@ -3682,7 +3712,7 @@ def old_graph(db={}):
             return changed
 
         while True:
-            _restore_default_poll()
+            _set_form_poll()
             inp = _start_typing_with_form_idle(graph_state)
 
             if ignore_form_back_until_ms is not None:
@@ -3737,17 +3767,7 @@ def old_graph(db={}):
 
                 try:
                     while True:
-                        feature_active = cursor.active or tool_state.active
-                        if feature_active:
-                            _restore_default_poll()
-                        else:
-                            if (
-                                fast_poll_block_until_ms is not None
-                                and _ticks_diff(time.ticks_ms(), fast_poll_block_until_ms) < 0
-                            ):
-                                _restore_default_poll()
-                            else:
-                                _set_fast_poll()
+                        _set_plot_poll()
 
                         key = _start_typing_with_plot_idle(
                             graph_state,
@@ -4042,7 +4062,7 @@ def old_graph(db={}):
                                 )
 
                         elif key == "toolbox":
-                            _restore_default_poll()
+                            _set_plot_poll()
                             toolbox_action = _open_toolbox_menu(
                                 fb,
                                 fb_buf,
@@ -4113,7 +4133,7 @@ def old_graph(db={}):
                             )
 
                         elif key == ",":
-                            _restore_default_poll()
+                            _set_plot_poll()
                             menu_status = _open_used_tools_menu(
                                 fb,
                                 fb_buf,
