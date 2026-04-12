@@ -181,6 +181,7 @@ class OldGraphFormTbf(FormTbf):
     def __init__(self, disp_out, chrs, f_b, nav=None):
         super().__init__(disp_out=disp_out, chrs=chrs, f_b=f_b, nav=nav)
         self.steady_bottom_page = False
+        self.external_bottom_page = False
 
     def _flush_partial(self, framebuffer, flush_kwargs, force=False):
         graphics_callable = self.disp_out.graphics
@@ -226,6 +227,17 @@ class OldGraphFormTbf(FormTbf):
             },
             force=force,
         )
+
+    def _flush_bottom_page(self, force=False):
+        if getattr(self, "external_bottom_page", False):
+            return
+        super()._flush_bottom_page(force=force)
+
+    def restore_bottom_row(self):
+        if getattr(self, "external_bottom_page", False):
+            self.last_state = ""
+            return
+        super().restore_bottom_row()
 
     def _layout_metrics(self, blocks):
         metrics = super()._layout_metrics(blocks)
@@ -1085,7 +1097,7 @@ def _draw_home_footer_page(graph_state):
     icon_x = DISPLAY_WIDTH - HOME_FOOTER_ICON_W - HOME_FOOTER_ICON_PAD_R
     _draw_home_style_icon(page_fb, icon_x, 0, graph_style)
 
-    display.graphics(page_buf, page=BOTTOM_PAGE_INDEX, column=0, width=DISPLAY_WIDTH, pages=1)
+    _draw_bottom_page(page_buf)
     set_active_view("form")
 
 
@@ -1097,7 +1109,7 @@ def _draw_status_page(text_value):
     if text_value:
         text_x = max(0, (DISPLAY_WIDTH - _text_width(text_value)) // 2)
         _draw_ui_text(page_fb, text_value, text_x, 0, 1, max_width=DISPLAY_WIDTH)
-    display.graphics(page_buf, page=BOTTOM_PAGE_INDEX, column=0, width=DISPLAY_WIDTH, pages=1)
+    _draw_bottom_page(page_buf)
     set_active_view("form")
 
 
@@ -1141,6 +1153,8 @@ def _draw_home_navbar(graph_state):
 def _set_home_footer_steady(enabled):
     if hasattr(form_refresh, "steady_bottom_page"):
         form_refresh.steady_bottom_page = bool(enabled)
+    if hasattr(form_refresh, "external_bottom_page"):
+        form_refresh.external_bottom_page = bool(enabled)
 
 
 def _refresh_home_form(graph_state, force=False):
@@ -1494,7 +1508,19 @@ def _display_page(fb_buf, page_index):
     start = page_index * DISPLAY_WIDTH
     end = start + DISPLAY_WIDTH
     set_active_view("graphics")
-    display.graphics(memoryview(fb_buf)[start:end], page=page_index, column=0, width=DISPLAY_WIDTH, pages=1)
+    page_buf = memoryview(fb_buf)[start:end]
+    if page_index == BOTTOM_PAGE_INDEX and hasattr(nav, "draw_bottom_page"):
+        nav.draw_bottom_page(page_buf, force=True)
+        return
+    display.graphics(page_buf, page=page_index, column=0, width=DISPLAY_WIDTH, pages=1)
+
+
+def _draw_bottom_page(page_buf, force=False):
+    set_active_view("graphics")
+    if hasattr(nav, "draw_bottom_page"):
+        nav.draw_bottom_page(page_buf, force=force)
+        return
+    display.graphics(page_buf, page=BOTTOM_PAGE_INDEX, column=0, width=DISPLAY_WIDTH, pages=1)
 
 
 def _plot_footer_active(tool_state):
@@ -2539,8 +2565,7 @@ def _apply_plot_navbar_page(fb_buf, page_buf, cache_buf=None, flush=True):
     if cache_buf is not None:
         cache_buf[start:end] = page_buf
     if flush:
-        set_active_view("graphics")
-        display.graphics(page_buf, page=BOTTOM_PAGE_INDEX, column=0, width=DISPLAY_WIDTH, pages=1)
+        _draw_bottom_page(page_buf, force=flush)
 
 
 def _refresh_plot_navbar(graph_state, bounds, tool_state, fb_buf, cache_buf, footer_state, force=False):

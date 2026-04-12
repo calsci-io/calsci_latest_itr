@@ -259,16 +259,35 @@ class Tbf:
         self._draw_text_center(state, STATUS_Y, color=0)
 
     def _flush(self):
+        flush_pages = max(1, DISPLAY_PAGES - 1)
+        flush_len = DISPLAY_WIDTH * flush_pages
         self.disp_out.graphics(
-            self.buf,
+            memoryview(self.buf)[:flush_len],
             page=0,
             column=0,
             width=DISPLAY_WIDTH,
-            pages=DISPLAY_PAGES,
+            pages=flush_pages,
+        )
+
+    def _flush_bottom_page(self, force=False):
+        bottom_page = max(0, DISPLAY_PAGES - 1)
+        start = bottom_page * DISPLAY_WIDTH
+        end = start + DISPLAY_WIDTH
+        page_buf = memoryview(self.buf)[start:end]
+        if self.nav is not None and hasattr(self.nav, "draw_bottom_page"):
+            self.nav.draw_bottom_page(page_buf, force=force)
+            return
+        self.disp_out.graphics(
+            page_buf,
+            page=bottom_page,
+            column=0,
+            width=DISPLAY_WIDTH,
+            pages=1,
         )
 
     def restore_bottom_row(self):
-        self.refresh(state="")
+        self._flush_bottom_page(force=True)
+        self.last_state = ""
 
     def refresh(self, state=None):
         set_active_view("menu")
@@ -310,6 +329,7 @@ class Tbf:
         self._draw_scrollbar(len(items), top_index)
         self._draw_footer(state=state)
         self._flush()
+        self._flush_bottom_page()
 
         if self.nav is not None:
             nav_overlay_visible = (

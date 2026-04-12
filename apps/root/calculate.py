@@ -37,8 +37,8 @@ from apps.installed_apps._mono_ui import (
     MonoCanvas,
     clip_text_px,
 )
+from apps.root.function_store import list_runtime_functions
 from data_modules.characters import Characters
-from data_modules.db_instance import fun_db
 from data_modules.math_symbols import PI_CHAR, normalize_expression, normalize_pi_token
 from data_modules.object_handler import (
     app,
@@ -77,6 +77,7 @@ _CURSOR_THICKNESS = 2
 _CURSOR_BLINK_MS = 450
 _EDITOR_BUCKET_KEY = "_calculate_editor"
 _PENDING_BUCKET_KEY = "_calculate_pending_action"
+_FUNCTIONS_RELOAD_BUCKET_KEY = "_calculate_functions_dirty"
 _CALCULATE_STATE_PATHS = ("/db/calculate_state.json", "db/calculate_state.json")
 _MODE_STATE_UPDATE = object()
 _AUTO_CALL_TOKENS = {
@@ -88,6 +89,10 @@ _AUTO_CALL_TOKENS = {
     "atan": 1,
 }
 _calculate_state_cache = None
+_calculate_state_pending_editor = None
+_calculate_state_pending_since = 0
+_CALCULATE_STATE_IDLE_FLUSH_MS = 600
+_CALCULATE_INPUT_POLL_SEC = 0.01
 
 
 def _ticks_ms():
@@ -181,7 +186,7 @@ def load_all_functions():
     SAFE_GLOBALS.update(_BASE_SAFE_GLOBALS)
     SAFE_GLOBALS["ans"] = ans[0]
 
-    for row in fun_db.all():
+    for row in list_runtime_functions():
         name = row.get("name")
         variables = row.get("variables")
         expression = row.get("expression")
@@ -195,6 +200,14 @@ def load_all_functions():
         }
         FUNCTIONS[name] = build_function(func_def, SAFE_GLOBALS)
         SAFE_GLOBALS[name] = FUNCTIONS[name]
+
+
+def _ensure_functions_loaded():
+    should_reload = not FUNCTIONS
+    if data_bucket.pop(_FUNCTIONS_RELOAD_BUCKET_KEY, False):
+        should_reload = True
+    if should_reload:
+        load_all_functions()
 
 
 class Slot:
@@ -574,23 +587,80 @@ def _restore_editor_from_state(state):
 
 def _load_saved_editor_state():
     global _calculate_state_cache
+    global _calculate_state_pending_editor
+    global _calculate_state_pending_since
 
     state = _load_json_from_paths(_CALCULATE_STATE_PATHS)
     editor = _restore_editor_from_state(state)
     if editor is None:
         return None
     _calculate_state_cache = _serialize_editor_state(editor)
+    _calculate_state_pending_editor = None
+    _calculate_state_pending_since = 0
     return editor
 
 
-def _save_calculate_state(editor):
+def _write_calculate_state(editor):
     global _calculate_state_cache
 
     payload = _serialize_editor_state(editor)
     if payload == _calculate_state_cache:
-        return
+        return True
     if _save_json_to_paths(_CALCULATE_STATE_PATHS, payload):
         _calculate_state_cache = payload
+        return True
+    return False
+
+
+def _save_calculate_state(editor, force=False):
+    global _calculate_state_pending_editor
+    global _calculate_state_pending_since
+
+    if editor is None:
+        return False
+
+    if force:
+        saved = _write_calculate_state(editor)
+        if saved and _calculate_state_pending_editor is editor:
+            _calculate_state_pending_editor = None
+            _calculate_state_pending_since = 0
+        return saved
+
+    _calculate_state_pending_editor = editor
+    _calculate_state_pending_since = _ticks_ms()
+    return False
+
+
+def _flush_pending_calculate_state(force=False):
+    global _calculate_state_pending_editor
+    global _calculate_state_pending_since
+
+    editor = _calculate_state_pending_editor
+    if editor is None:
+        return False
+
+    if not force:
+        pending_since = int(_calculate_state_pending_since or 0)
+        if pending_since > 0 and (_ticks_ms() - pending_since) < _CALCULATE_STATE_IDLE_FLUSH_MS:
+            return False
+
+    saved = _write_calculate_state(editor)
+    if saved:
+        _calculate_state_pending_editor = None
+        _calculate_state_pending_since = 0
+    return saved
+
+
+def _push_calculate_poll_delay():
+    previous_delay = getattr(typer, "debounce_delay_time", None)
+    if previous_delay is not None:
+        typer.debounce_delay_time = _CALCULATE_INPUT_POLL_SEC
+    return previous_delay
+
+
+def _restore_calculate_poll_delay(previous_delay):
+    if previous_delay is not None:
+        typer.debounce_delay_time = previous_delay
 
 
 class _MathEditor:
@@ -623,6 +693,7 @@ class _MathEditor:
         return changed
 
     def idle(self):
+        _flush_pending_calculate_state(force=False)
         if self._update_cursor_blink():
             self.render()
 
@@ -1726,12 +1797,20 @@ class _MathEditor:
             color=1,
         )
 
+    def _flush_bottom_page(self):
+        bottom_page = (DISPLAY_HEIGHT // 8) - 1
+        start = bottom_page * DISPLAY_WIDTH
+        end = start + DISPLAY_WIDTH
+        nav.draw_bottom_page(memoryview(self.canvas.buf)[start:end])
+
     def _nav_overlay(self):
         state = str(nav.current_state() or "")
         nav_overlay_visible = state != "" and nav.is_visible()
-        nav.set_restore_callback(self.render if nav_overlay_visible else None)
-        if state != "":
+        nav.set_restore_callback(self._flush_bottom_page if nav_overlay_visible else None)
+        if nav_overlay_visible:
             nav.draw_state(state)
+        else:
+            self._flush_bottom_page()
 
     def render(self):
         set_active_view("text")
@@ -1777,7 +1856,7 @@ class _MathEditor:
             max_scroll_y,
         )
         self._draw_bottom_answer()
-        self.canvas.flush()
+        self.canvas.flush(page=0, pages=(DISPLAY_HEIGHT // 8) - 1)
         self._nav_overlay()
 
     def apply_pending_action(self, action):
@@ -1848,7 +1927,7 @@ def _load_editor():
         editor._cursor_visible = True
     if not hasattr(editor, "_cursor_last_toggle"):
         editor._cursor_last_toggle = _ticks_ms()
-    _save_calculate_state(editor)
+    _save_calculate_state(editor, force=False)
     return editor
 
 
@@ -1889,16 +1968,17 @@ def _start_typing_with_editor_idle(editor):
 
 
 def calculate():
-    load_all_functions()
+    _ensure_functions_loaded()
     keypad_state_manager_reset()
     set_active_view("text")
     display.clear_display()
+    previous_delay = _push_calculate_poll_delay()
 
     editor = _load_editor()
     pending_action = data_bucket.pop(_PENDING_BUCKET_KEY, None)
     if pending_action:
         editor.apply_pending_action(pending_action)
-        _save_calculate_state(editor)
+        _save_calculate_state(editor, force=False)
 
     editor.render()
     try:
@@ -1915,7 +1995,7 @@ def calculate():
 
             if token == "toolbox":
                 data_bucket[_EDITOR_BUCKET_KEY] = editor
-                _save_calculate_state(editor)
+                _save_calculate_state(editor, force=False)
                 app.set_app_name("toolbox")
                 app.set_group_name("root")
                 break
@@ -1927,4 +2007,5 @@ def calculate():
 
             editor.handle_key(token)
     finally:
-        _save_calculate_state(editor)
+        _flush_pending_calculate_state(force=False)
+        _restore_calculate_poll_delay(previous_delay)

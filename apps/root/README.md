@@ -9,7 +9,7 @@ These apps define the **top‑level UI flow**: Home, Settings, Scientific Calcul
 - **`settings.py`** – Menu that opens apps under `apps/settings/`.
 - **`installed_apps.py`** – Menu to open apps under `apps/installed_apps/`.
 - **`calculate.py`** – Main calculator UI (text buffer input/response).
-- **`functions.py`** – Entry point for custom functions management.
+- **`function_vault.py`** – Function vault for creating, browsing, editing, and deleting saved functions.
 - **`toolbox.py`** – Utility tools menu (device helpers).
 - **`chatbot_ai.py`** – Text/form‑driven chat UI (local or connected logic).
 - **`error_screen.py`** – Error display screen for exceptions or alerts.

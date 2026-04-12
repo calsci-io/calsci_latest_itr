@@ -1,0 +1,1194 @@
+import st7565 as display
+
+try:
+    import tools
+
+    if hasattr(display, "graphics") and not hasattr(display.graphics, "pixels_changed"):
+        display.graphics = tools.refresh(display.graphics, pixels_changed=200)
+except Exception:
+    pass
+
+try:
+    import utime as time  # type: ignore
+except Exception:
+    import time  # type: ignore
+
+try:
+    from sleeping_features import swdt, test_deep_sleep_awake
+except Exception:
+    class _DummySwdt:
+        def feed(self):
+            return None
+
+    swdt = _DummySwdt()
+
+    def test_deep_sleep_awake():
+        return None
+
+
+from apps.installed_apps._mono_ui import (
+    CHAR_ADVANCE,
+    CHAR_HEIGHT,
+    DISPLAY_HEIGHT,
+    DISPLAY_WIDTH,
+    MonoCanvas,
+    clip_text_px,
+)
+from apps.root import calculate as calculate_app
+from apps.root.function_store import (
+    default_function_exists,
+    delete_user_function,
+    ensure_default_functions,
+    get_function,
+    list_default_functions,
+    list_runtime_functions,
+    list_user_functions,
+    upsert_user_function,
+    user_function_exists,
+)
+from data_modules.object_handler import data_bucket, keyin, keymap, keypad_state_manager, keypad_state_manager_reset, nav, typer
+from process_modules.keypad_modes import reset_mode, should_auto_reset_after_input, toggle_mode_lock
+from process_modules.navigation import request_navigation_from_key
+from process_modules.ui_context import set_active_view
+
+
+VIEW_MENU = "menu"
+VIEW_META = "meta"
+VIEW_USER_LIST = "user_list"
+VIEW_USER_ACTIONS = "user_actions"
+VIEW_DEFAULT_LIST = "default_list"
+VIEW_DEFAULT_DETAIL = "default_detail"
+VIEW_EXPR = "expr"
+VIEW_ARG_PICKER = "arg_picker"
+VIEW_MESSAGE = "message"
+
+MENU_ITEMS = ("Create New", "User Defined", "Default Functions")
+ACTION_ITEMS = ("Edit", "Delete")
+
+HEADER_H = 11
+FOOTER_H = 8
+ROW_H = 10
+LIST_TOP = HEADER_H + 2
+LIST_BOTTOM = DISPLAY_HEIGHT - FOOTER_H - 2
+VISIBLE_LIST_ROWS = max(1, (LIST_BOTTOM - LIST_TOP + 1) // ROW_H)
+
+FIELD_LABEL_W = 34
+FIELD_X = FIELD_LABEL_W + 4
+FIELD_W = DISPLAY_WIDTH - FIELD_X - 5
+FIELD_INNER_W = FIELD_W - 4
+FIELD_VISIBLE_CHARS = max(1, (FIELD_INNER_W + 1) // CHAR_ADVANCE)
+
+POPUP_W = 98
+POPUP_H = 36
+POPUP_X = (DISPLAY_WIDTH - POPUP_W) // 2
+POPUP_Y = (DISPLAY_HEIGHT - POPUP_H) // 2
+
+CURSOR_BLINK_MS = 450
+FUNCTIONS_RELOAD_BUCKET_KEY = "_calculate_functions_dirty"
+
+
+def _ticks_ms():
+    if hasattr(time, "ticks_ms"):
+        return time.ticks_ms()
+    try:
+        return int(time.monotonic() * 1000)
+    except Exception:
+        return int(time.time() * 1000)
+
+
+def _sleep_s(seconds):
+    try:
+        time.sleep(float(seconds))
+    except Exception:
+        pass
+
+
+def _wrap_text(text_value, max_chars):
+    text_value = str(text_value or "")
+    max_chars = max(1, int(max_chars or 1))
+    words = text_value.split()
+    if not words:
+        return [""]
+
+    lines = []
+    current = ""
+    for word in words:
+        if len(word) > max_chars:
+            if current:
+                lines.append(current)
+                current = ""
+            start = 0
+            while start < len(word):
+                lines.append(word[start : start + max_chars])
+                start += max_chars
+            continue
+
+        candidate = word if current == "" else current + " " + word
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+
+    if current:
+        lines.append(current)
+    return lines or [""]
+
+
+def _signature(name, variables):
+    name = str(name or "").strip()
+    args = [str(value or "").strip() for value in (variables or []) if str(value or "").strip() != ""]
+    return "{}({})".format(name or "fn", ",".join(args))
+
+
+def _is_identifier(name):
+    name = str(name or "").strip()
+    if name == "":
+        return False
+
+    first = name[0]
+    if not (("a" <= first <= "z") or ("A" <= first <= "Z") or first == "_"):
+        return False
+
+    for char in name[1:]:
+        if not (
+            ("a" <= char <= "z")
+            or ("A" <= char <= "Z")
+            or ("0" <= char <= "9")
+            or char == "_"
+        ):
+            return False
+    return True
+
+
+def _identifier_token(token):
+    token = str(token or "")
+    if len(token) != 1:
+        return None
+    char = token[0]
+    if (
+        ("a" <= char <= "z")
+        or ("A" <= char <= "Z")
+        or ("0" <= char <= "9")
+        or char == "_"
+    ):
+        return char
+    return None
+
+
+def _read_key_with_local_back(idle_callback=None):
+    _sleep_s(max(0.2, float(typer.debounce_delay())))
+    col, row = keyin.keypad_loop(idle_callback=idle_callback)
+    token = keymap.key_out(col=int(col), row=int(row))
+    swdt.feed()
+
+    if token in ("off", "on"):
+        test_deep_sleep_awake()
+        return "off"
+
+    if token == "lock":
+        toggle_mode_lock(keymap=keymap, nav=nav)
+        return ""
+
+    if should_auto_reset_after_input(keymap=keymap, nav=nav, key_name=token):
+        reset_mode(keymap=keymap, nav=nav)
+
+    return token
+
+
+class _FunctionVaultApp:
+    def __init__(self):
+        self.canvas = MonoCanvas()
+        self.view = VIEW_MENU
+        self.menu_index = 0
+        self.user_index = 0
+        self.default_index = 0
+        self.action_index = 0
+        self.arg_index = 0
+        self.selected_user_name = ""
+        self.selected_default_name = ""
+        self.status_message = "OK open"
+
+        self.meta_title = "Create New"
+        self.meta_return_view = VIEW_MENU
+        self.editing_original_name = ""
+        self.meta_name = ""
+        self.meta_name_cursor = 0
+        self.meta_args = [""]
+        self.meta_arg_cursors = [0]
+        self.meta_field_index = 0
+        self.meta_expression_state = None
+
+        self.popup = None
+        self.message_title = ""
+        self.message_lines = []
+        self.message_return_view = VIEW_MENU
+
+        self.editor = None
+        self.editor_name = ""
+        self.editor_args = []
+        self._calculate_save_restore = None
+
+        self._cursor_visible = True
+        self._cursor_last_toggle = _ticks_ms()
+
+    def _reset_cursor_blink(self):
+        self._cursor_visible = True
+        self._cursor_last_toggle = _ticks_ms()
+
+    def _update_cursor_blink(self):
+        now = _ticks_ms()
+        elapsed = now - self._cursor_last_toggle
+        if elapsed < CURSOR_BLINK_MS:
+            return False
+        toggles = max(1, elapsed // CURSOR_BLINK_MS)
+        if toggles % 2:
+            self._cursor_visible = not self._cursor_visible
+        self._cursor_last_toggle += toggles * CURSOR_BLINK_MS
+        return True
+
+    def _idle_callback(self):
+        if self.view == VIEW_EXPR and self.editor is not None:
+            return self.editor.idle
+
+        if self.view == VIEW_META:
+            def _idle():
+                if self._update_cursor_blink():
+                    self.render()
+
+            return _idle
+
+        return None
+
+    def _draw_nav_overlay(self):
+        state = str(nav.current_state() or "")
+        nav_overlay_visible = state != "" and nav.is_visible()
+        nav.set_restore_callback(self._flush_bottom_page if nav_overlay_visible else None)
+        if nav_overlay_visible:
+            nav.draw_state(state)
+        else:
+            self._flush_bottom_page()
+
+    def _flush_bottom_page(self):
+        bottom_page = (DISPLAY_HEIGHT // 8) - 1
+        start = bottom_page * DISPLAY_WIDTH
+        end = start + DISPLAY_WIDTH
+        nav.draw_bottom_page(memoryview(self.canvas.buf)[start:end])
+
+    def _flush_screen(self):
+        self.canvas.flush(page=0, pages=(DISPLAY_HEIGHT // 8) - 1)
+        self._draw_nav_overlay()
+
+    def _footer_text(self, default_text):
+        if self.status_message:
+            return clip_text_px(self.status_message, DISPLAY_WIDTH - 2)
+        return clip_text_px(default_text, DISPLAY_WIDTH - 2)
+
+    def _draw_header(self, title, subtitle=""):
+        title = clip_text_px(title, DISPLAY_WIDTH - 4)
+        self.canvas.draw_text(title, 2, 1, 1)
+        self.canvas.hline(0, HEADER_H - 1, DISPLAY_WIDTH, 1)
+        if subtitle:
+            self.canvas.draw_text(clip_text_px(subtitle, DISPLAY_WIDTH - 4), 2, HEADER_H + 1, 1)
+
+    def _draw_footer(self, text_value):
+        self.canvas.hline(0, DISPLAY_HEIGHT - FOOTER_H - 1, DISPLAY_WIDTH, 1)
+        self.canvas.draw_text(clip_text_px(text_value, DISPLAY_WIDTH - 2), 1, DISPLAY_HEIGHT - FOOTER_H + 1, 1)
+
+    def _list_window(self, selected_index, item_count):
+        if item_count <= VISIBLE_LIST_ROWS:
+            return 0
+        top_index = max(0, int(selected_index) - VISIBLE_LIST_ROWS + 1)
+        max_top = max(0, item_count - VISIBLE_LIST_ROWS)
+        return min(top_index, max_top)
+
+    def _draw_scrollbar(self, top_index, item_count):
+        if item_count <= VISIBLE_LIST_ROWS:
+            return
+        track_x = DISPLAY_WIDTH - 2
+        track_y = LIST_TOP
+        track_h = max(8, LIST_BOTTOM - LIST_TOP + 1)
+        self.canvas.vline(track_x, track_y, track_h, 1)
+        thumb_h = max(8, (track_h * VISIBLE_LIST_ROWS) // max(1, item_count))
+        max_top = max(1, item_count - VISIBLE_LIST_ROWS)
+        thumb_range = max(0, track_h - thumb_h)
+        thumb_y = track_y + (top_index * thumb_range // max_top)
+        self.canvas.fill_rect(track_x - 1, thumb_y, 3, thumb_h, 1)
+
+    def _draw_list(self, title, items, selected_index, footer_text):
+        set_active_view("menu")
+        self.canvas.clear(0)
+        self._draw_header(title)
+
+        rows = list(items or [])
+        if not rows:
+            rows = ["No items"]
+            selected_index = 0
+
+        selected_index = max(0, min(int(selected_index), len(rows) - 1))
+        top_index = self._list_window(selected_index, len(rows))
+        bottom_index = min(len(rows), top_index + VISIBLE_LIST_ROWS)
+
+        y = LIST_TOP
+        for row_index in range(top_index, bottom_index):
+            label = str(rows[row_index] or "")
+            selected = row_index == selected_index
+            if selected:
+                self.canvas.fill_rect(1, y - 1, DISPLAY_WIDTH - 5, ROW_H, 1)
+            self.canvas.draw_text(
+                clip_text_px(label, DISPLAY_WIDTH - 10),
+                3,
+                y,
+                0 if selected else 1,
+            )
+            y += ROW_H
+
+        self._draw_scrollbar(top_index, len(rows))
+        self._draw_footer(footer_text)
+        self._flush_screen()
+
+    def _visible_field_slice(self, value, cursor):
+        value = str(value or "")
+        cursor = max(0, min(int(cursor), len(value)))
+        start = 0
+        if cursor > FIELD_VISIBLE_CHARS:
+            start = cursor - FIELD_VISIBLE_CHARS
+        max_start = max(0, len(value) - FIELD_VISIBLE_CHARS)
+        start = min(start, max_start)
+        if cursor < start:
+            start = cursor
+        visible = value[start : start + FIELD_VISIBLE_CHARS]
+        return start, visible
+
+    def _field_value(self, field_index):
+        if field_index <= 0:
+            return self.meta_name
+        arg_index = field_index - 1
+        if arg_index < 0 or arg_index >= len(self.meta_args):
+            return ""
+        return self.meta_args[arg_index]
+
+    def _field_cursor(self, field_index):
+        if field_index <= 0:
+            return self.meta_name_cursor
+        arg_index = field_index - 1
+        if arg_index < 0 or arg_index >= len(self.meta_arg_cursors):
+            return 0
+        return self.meta_arg_cursors[arg_index]
+
+    def _set_field_value(self, field_index, value):
+        value = str(value or "")
+        if field_index <= 0:
+            self.meta_name = value
+            self.meta_name_cursor = min(self.meta_name_cursor, len(self.meta_name))
+            return
+        arg_index = field_index - 1
+        while arg_index >= len(self.meta_args):
+            self.meta_args.append("")
+            self.meta_arg_cursors.append(0)
+        self.meta_args[arg_index] = value
+        self.meta_arg_cursors[arg_index] = min(self.meta_arg_cursors[arg_index], len(value))
+
+    def _set_field_cursor(self, field_index, cursor):
+        if field_index <= 0:
+            self.meta_name_cursor = max(0, min(int(cursor), len(self.meta_name)))
+            return
+        arg_index = field_index - 1
+        if 0 <= arg_index < len(self.meta_args):
+            self.meta_arg_cursors[arg_index] = max(0, min(int(cursor), len(self.meta_args[arg_index])))
+
+    def _normalize_arg_fields(self):
+        old_values = list(self.meta_args or [])
+        old_cursors = list(self.meta_arg_cursors or [])
+        active_arg_index = self.meta_field_index - 1 if self.meta_field_index > 0 else None
+        new_active_arg_index = active_arg_index
+
+        kept_values = []
+        kept_cursors = []
+
+        for index, value in enumerate(old_values):
+            value = str(value or "")
+            cursor = 0
+            if index < len(old_cursors):
+                cursor = max(0, min(int(old_cursors[index]), len(value)))
+
+            keep = value.strip() != ""
+            if index == len(old_values) - 1:
+                keep = keep or True
+
+            if keep and not (index != len(old_values) - 1 and value.strip() == ""):
+                kept_values.append(value)
+                kept_cursors.append(cursor)
+                continue
+
+            if active_arg_index is not None and index < active_arg_index:
+                new_active_arg_index -= 1
+
+        if not kept_values:
+            kept_values = [""]
+            kept_cursors = [0]
+        elif kept_values[-1].strip() != "":
+            kept_values.append("")
+            kept_cursors.append(0)
+
+        self.meta_args = kept_values
+        self.meta_arg_cursors = kept_cursors
+
+        if active_arg_index is not None:
+            new_active_arg_index = max(0, min(new_active_arg_index, len(self.meta_args) - 1))
+            self.meta_field_index = 1 + new_active_arg_index
+
+    def _meta_rows(self):
+        rows = [("Name", self.meta_name)]
+        for index, value in enumerate(self.meta_args):
+            rows.append(("Arg {}".format(index + 1), value))
+        return rows
+
+    def _render_meta(self):
+        set_active_view("form")
+        self.canvas.clear(0)
+        self._draw_header(self.meta_title)
+
+        self._normalize_arg_fields()
+        rows = self._meta_rows()
+        field_count = len(rows)
+        self.meta_field_index = max(0, min(int(self.meta_field_index), field_count - 1))
+
+        top_index = self._list_window(self.meta_field_index, field_count)
+        bottom_index = min(field_count, top_index + VISIBLE_LIST_ROWS)
+        y = LIST_TOP
+
+        for row_index in range(top_index, bottom_index):
+            label, value = rows[row_index]
+            selected = row_index == self.meta_field_index
+            self.canvas.draw_text(label, 2, y + 1, 1)
+            self.canvas.rect(FIELD_X, y, FIELD_W, CHAR_HEIGHT + 2, 1)
+
+            cursor = self._field_cursor(row_index)
+            start, visible_value = self._visible_field_slice(value, cursor)
+            text_y = y + 1
+            self.canvas.draw_text(visible_value, FIELD_X + 2, text_y, 1)
+
+            if selected and self._cursor_visible and self.popup is None:
+                cursor_offset = max(0, min(cursor - start, len(visible_value)))
+                cursor_x = FIELD_X + 2 + cursor_offset * CHAR_ADVANCE
+                cursor_x = min(cursor_x, FIELD_X + FIELD_W - 3)
+                self.canvas.vline(cursor_x, y + 1, CHAR_HEIGHT, 1)
+
+            if selected:
+                self.canvas.fill_rect(0, y - 1, 1, CHAR_HEIGHT + 4, 1)
+
+            y += ROW_H
+
+        self._draw_scrollbar(top_index, field_count)
+
+        footer_text = "OK next"
+        if self.meta_name.strip() != "":
+            footer_text = _signature(self.meta_name.strip(), self.argument_names() or [""])
+        self._draw_footer(self._footer_text(footer_text))
+
+        if self.popup is not None:
+            self._draw_popup()
+
+        self._flush_screen()
+
+    def _draw_popup(self):
+        popup = self.popup or {}
+        title = clip_text_px(popup.get("title", ""), POPUP_W - 6)
+        lines = popup.get("lines") or []
+        left_label = clip_text_px(popup.get("left", "Cancel"), 34)
+        right_label = clip_text_px(popup.get("right", "Ok"), 34)
+        selected = str(popup.get("selected") or "left")
+
+        self.canvas.fill_rect(POPUP_X, POPUP_Y, POPUP_W, POPUP_H, 0)
+        self.canvas.rect(POPUP_X, POPUP_Y, POPUP_W, POPUP_H, 1)
+        self.canvas.hline(POPUP_X + 1, POPUP_Y + 10, POPUP_W - 2, 1)
+        self.canvas.draw_text(title, POPUP_X + 3, POPUP_Y + 1, 1)
+
+        for index in range(min(2, len(lines))):
+            self.canvas.draw_text(
+                clip_text_px(lines[index], POPUP_W - 6),
+                POPUP_X + 3,
+                POPUP_Y + 13 + index * 8,
+                1,
+            )
+
+        left_x = POPUP_X + 6
+        right_x = POPUP_X + POPUP_W - 42
+        option_y = POPUP_Y + POPUP_H - 11
+
+        if selected == "left":
+            self.canvas.fill_rect(left_x - 2, option_y - 1, 38, 10, 1)
+            self.canvas.draw_text(left_label, left_x, option_y, 0)
+            self.canvas.draw_text(right_label, right_x, option_y, 1)
+        else:
+            self.canvas.draw_text(left_label, left_x, option_y, 1)
+            self.canvas.fill_rect(right_x - 2, option_y - 1, 38, 10, 1)
+            self.canvas.draw_text(right_label, right_x, option_y, 0)
+
+    def _render_user_actions(self):
+        row = get_function(self.selected_user_name, scope="user")
+        if row is None:
+            self.view = VIEW_USER_LIST
+            self.status_message = "Function missing"
+            self.render()
+            return
+
+        set_active_view("menu")
+        self.canvas.clear(0)
+        self._draw_header("User Defined")
+        self.canvas.draw_text(clip_text_px(row["name"], DISPLAY_WIDTH - 6), 2, 14, 1)
+        self.canvas.draw_text(clip_text_px(_signature(row["name"], row["variables"]), DISPLAY_WIDTH - 6), 2, 23, 1)
+        self.canvas.draw_text(clip_text_px(row.get("expression", ""), DISPLAY_WIDTH - 6), 2, 32, 1)
+
+        option_row_h = 8
+        start_y = 39
+        for index, label in enumerate(ACTION_ITEMS):
+            selected = index == self.action_index
+            y = start_y + index * option_row_h
+            if selected:
+                self.canvas.fill_rect(1, y - 1, DISPLAY_WIDTH - 4, option_row_h + 1, 1)
+            self.canvas.draw_text(label, 4, y, 0 if selected else 1)
+
+        if self.popup is not None:
+            self._draw_popup()
+
+        self._draw_footer(self._footer_text("BACK user list"))
+        self._flush_screen()
+
+    def _render_default_detail(self):
+        row = get_function(self.selected_default_name, scope="default")
+        if row is None:
+            self.view = VIEW_DEFAULT_LIST
+            self.status_message = "Function missing"
+            self.render()
+            return
+
+        set_active_view("menu")
+        self.canvas.clear(0)
+        self._draw_header("Default Function")
+        self.canvas.draw_text(clip_text_px(row["name"], DISPLAY_WIDTH - 6), 2, 14, 1)
+        signature = _signature(row["name"], row["variables"])
+        self.canvas.draw_text(clip_text_px(signature, DISPLAY_WIDTH - 6), 2, 23, 1)
+
+        lines = _wrap_text(row.get("expression", ""), 20)
+        for index, line in enumerate(lines[:3]):
+            self.canvas.draw_text(clip_text_px(line, DISPLAY_WIDTH - 6), 2, 33 + index * 8, 1)
+
+        self._draw_footer(self._footer_text("Read only"))
+        self._flush_screen()
+
+    def _render_message(self):
+        set_active_view("form")
+        self.canvas.clear(0)
+        self._draw_header(self.message_title)
+        for index, line in enumerate(self.message_lines[:4]):
+            self.canvas.draw_text(
+                clip_text_px(line, DISPLAY_WIDTH - 6),
+                3,
+                17 + index * 10,
+                1,
+            )
+        self._draw_footer("OK continue")
+        self._flush_screen()
+
+    def _draw_expression_footer(self):
+        if self.view != VIEW_EXPR:
+            return
+        if str(nav.current_state() or "") != "" and nav.is_visible():
+            return
+
+        footer_buf = bytearray(DISPLAY_WIDTH)
+        page_text = clip_text_px(_signature(self.editor_name, self.editor_args), DISPLAY_WIDTH - 2)
+        if page_text:
+            for index, char in enumerate(page_text):
+                glyph = calculate_app.Characters.Chr2bytes(calculate_app.Characters, char)
+                x = index * CHAR_ADVANCE
+                if x >= DISPLAY_WIDTH:
+                    break
+                for col_index, col_bits in enumerate(glyph):
+                    target = x + col_index
+                    if target >= DISPLAY_WIDTH:
+                        break
+                    footer_buf[target] = col_bits
+        nav.draw_bottom_page(footer_buf)
+
+    def render(self):
+        if self.view == VIEW_MENU:
+            self._draw_list("Function Vault", MENU_ITEMS, self.menu_index, self._footer_text("OK open"))
+            return
+        if self.view == VIEW_USER_LIST:
+            rows = [row["name"] for row in list_user_functions()]
+            self._draw_list("User Defined", rows, self.user_index, self._footer_text("OK actions"))
+            return
+        if self.view == VIEW_DEFAULT_LIST:
+            rows = [row["name"] for row in list_default_functions()]
+            self._draw_list("Default Functions", rows, self.default_index, self._footer_text("OK details"))
+            return
+        if self.view == VIEW_META:
+            self._render_meta()
+            return
+        if self.view == VIEW_USER_ACTIONS:
+            self._render_user_actions()
+            return
+        if self.view == VIEW_DEFAULT_DETAIL:
+            self._render_default_detail()
+            return
+        if self.view == VIEW_ARG_PICKER:
+            rows = list(self.editor_args or [])
+            self._draw_list("Arguments", rows or ["No arguments"], self.arg_index, self._footer_text("OK insert"))
+            return
+        if self.view == VIEW_MESSAGE:
+            self._render_message()
+            return
+        if self.view == VIEW_EXPR and self.editor is not None:
+            self.editor.render()
+
+    def _set_message(self, title, text_value, return_view=None):
+        max_chars = max(1, (DISPLAY_WIDTH - 6) // CHAR_ADVANCE)
+        self.message_title = str(title or "")
+        self.message_lines = _wrap_text(text_value, max_chars)
+        self.message_return_view = return_view or self.view
+        self.view = VIEW_MESSAGE
+
+    def _activate_popup(self, title, lines, left_label, right_label, kind):
+        self.popup = {
+            "title": str(title or ""),
+            "lines": list(lines or []),
+            "left": str(left_label or "Cancel"),
+            "right": str(right_label or "Ok"),
+            "selected": "left",
+            "kind": str(kind or ""),
+        }
+
+    def _clear_popup(self):
+        self.popup = None
+
+    def _open_create_form(self, row=None, return_view=VIEW_MENU):
+        row = row or {}
+        self.meta_title = "Edit Function" if row else "Create New"
+        self.meta_return_view = return_view
+        self.editing_original_name = str(row.get("name") or "")
+        self.meta_name = str(row.get("name") or "")
+        self.meta_name_cursor = len(self.meta_name)
+
+        variables = list(row.get("variables") or [])
+        if variables:
+            self.meta_args = [str(value or "") for value in variables]
+            self.meta_arg_cursors = [len(value) for value in self.meta_args]
+        else:
+            self.meta_args = [""]
+            self.meta_arg_cursors = [0]
+
+        self.meta_args.append("")
+        self.meta_arg_cursors.append(0)
+        self.meta_field_index = 0
+        self.meta_expression_state = row.get("expression_state")
+        self._normalize_arg_fields()
+        self._reset_cursor_blink()
+        self.status_message = "OK next"
+        self.view = VIEW_META
+
+    def argument_names(self):
+        args = []
+        for value in self.meta_args:
+            value = str(value or "").strip()
+            if value != "":
+                args.append(value)
+        return args
+
+    def _validate_meta(self):
+        name = self.meta_name.strip()
+        if not _is_identifier(name):
+            return False, "Function name must be a valid identifier"
+
+        variables = self.argument_names()
+        seen = []
+        for variable in variables:
+            if not _is_identifier(variable):
+                return False, "Argument '{}' is invalid".format(variable)
+            if variable in seen:
+                return False, "Duplicate argument '{}'".format(variable)
+            seen.append(variable)
+
+        if default_function_exists(name) and name != self.editing_original_name:
+            return False, "Default function '{}' already exists".format(name)
+
+        if name in calculate_app._BASE_SAFE_GLOBALS or name == "ans":
+            return False, "Function name '{}' is reserved".format(name)
+
+        return True, ""
+
+    def _open_expression_editor(self):
+        if self._calculate_save_restore is None:
+            self._calculate_save_restore = calculate_app._save_calculate_state
+            calculate_app._save_calculate_state = lambda _editor: None
+
+        editor = calculate_app._MathEditor()
+        expression_state = self.meta_expression_state
+
+        if isinstance(expression_state, dict):
+            calculate_app._load_slot_from_state(editor.root, expression_state)
+        else:
+            existing = get_function(self.meta_name.strip(), scope="user")
+            expression_text = ""
+            if existing is not None:
+                expression_text = str(existing.get("expression") or "")
+            if expression_text != "":
+                editor._insert_sequence([calculate_app.TokenNode(expression_text)])
+
+        editor._set_cursor(editor.root, len(editor.root.items))
+        editor._flush_bottom_page = self._draw_expression_footer
+
+        self.editor = editor
+        self.editor_name = self.meta_name.strip()
+        self.editor_args = self.argument_names()
+        self.view = VIEW_EXPR
+        self.status_message = ""
+        self.render()
+
+    def _validate_expression_and_save(self):
+        expression, ok = self.editor._slot_to_expression(self.editor.root)
+        if not ok:
+            return False, "Expression is incomplete"
+
+        safe_globals = dict(calculate_app._BASE_SAFE_GLOBALS)
+        safe_globals["ans"] = calculate_app.ans[0]
+        safe_globals.pop(self.editor_name, None)
+
+        for row in list_runtime_functions():
+            row_name = str(row.get("name") or "").strip()
+            if row_name == "" or row_name == self.editor_name:
+                continue
+            variables = list(row.get("variables") or [])
+            row_expression = str(row.get("expression") or "").strip()
+            if row_expression == "":
+                continue
+            try:
+                fn = calculate_app.build_function(
+                    {
+                        "variables": variables,
+                        "expression": row_expression,
+                    },
+                    safe_globals,
+                )
+            except Exception:
+                continue
+            safe_globals[row_name] = fn
+
+        locals_scope = {}
+        for index, name in enumerate(self.editor_args):
+            locals_scope[name] = float(index + 2)
+
+        try:
+            eval(expression, safe_globals, locals_scope)
+        except Exception as exc:
+            return False, str(exc)
+
+        expression_state = calculate_app._serialize_slot(self.editor.root)
+        upsert_user_function(
+            self.editor_name,
+            self.editor_args,
+            expression,
+            expression_state=expression_state,
+            original_name=self.editing_original_name,
+        )
+        data_bucket[FUNCTIONS_RELOAD_BUCKET_KEY] = True
+
+        self.meta_expression_state = expression_state
+        self.selected_user_name = self.editor_name
+        rows = [row["name"] for row in list_user_functions()]
+        if self.selected_user_name in rows:
+            self.user_index = rows.index(self.selected_user_name)
+        self.view = VIEW_USER_LIST
+        self.status_message = "Saved {}".format(self.editor_name)
+        return True, ""
+
+    def _restore_expression_state(self):
+        if self.editor is None:
+            return
+        self.meta_expression_state = calculate_app._serialize_slot(self.editor.root)
+
+    def _handle_popup_token(self, token):
+        if token in ("nav_l", "nav_r"):
+            if self.popup is not None:
+                self.popup["selected"] = "right" if self.popup.get("selected") == "left" else "left"
+            return
+
+        if token == "back":
+            self._clear_popup()
+            self.status_message = "Cancelled"
+            return
+
+        if token not in ("ok", "exe"):
+            return
+
+        selected = "left"
+        kind = ""
+        if self.popup is not None:
+            selected = str(self.popup.get("selected") or "left")
+            kind = str(self.popup.get("kind") or "")
+
+        self._clear_popup()
+        if selected == "left":
+            self.status_message = "Cancelled"
+            return
+
+        if kind == "replace":
+            self._open_expression_editor()
+        elif kind == "delete":
+            if delete_user_function(self.selected_user_name):
+                data_bucket[FUNCTIONS_RELOAD_BUCKET_KEY] = True
+                rows = [row["name"] for row in list_user_functions()]
+                if rows:
+                    self.user_index = min(self.user_index, len(rows) - 1)
+                else:
+                    self.user_index = 0
+                self.view = VIEW_USER_LIST
+                self.status_message = "Deleted {}".format(self.selected_user_name)
+            else:
+                self.status_message = "Delete failed"
+
+    def _handle_menu_token(self, token):
+        if token == "back":
+            request_navigation_from_key("back")
+            return
+        if token == "nav_u":
+            self.menu_index = (self.menu_index - 1) % len(MENU_ITEMS)
+            self.status_message = "OK open"
+            return
+        if token == "nav_d":
+            self.menu_index = (self.menu_index + 1) % len(MENU_ITEMS)
+            self.status_message = "OK open"
+            return
+        if token not in ("ok", "exe"):
+            return
+
+        if self.menu_index == 0:
+            self._open_create_form()
+        elif self.menu_index == 1:
+            self.view = VIEW_USER_LIST
+            self.status_message = "OK actions"
+        else:
+            self.view = VIEW_DEFAULT_LIST
+            self.status_message = "OK details"
+
+    def _handle_user_list_token(self, token):
+        rows = list_user_functions()
+        if token == "back":
+            self.view = VIEW_MENU
+            self.status_message = "OK open"
+            return
+        if token == "nav_u" and rows:
+            self.user_index = (self.user_index - 1) % len(rows)
+            self.status_message = "OK actions"
+            return
+        if token == "nav_d" and rows:
+            self.user_index = (self.user_index + 1) % len(rows)
+            self.status_message = "OK actions"
+            return
+        if token not in ("ok", "exe") or not rows:
+            return
+
+        self.user_index = max(0, min(self.user_index, len(rows) - 1))
+        self.selected_user_name = rows[self.user_index]["name"]
+        self.action_index = 0
+        self.view = VIEW_USER_ACTIONS
+        self.status_message = ""
+
+    def _handle_default_list_token(self, token):
+        rows = list_default_functions()
+        if token == "back":
+            self.view = VIEW_MENU
+            self.status_message = "OK open"
+            return
+        if token == "nav_u" and rows:
+            self.default_index = (self.default_index - 1) % len(rows)
+            self.status_message = "OK details"
+            return
+        if token == "nav_d" and rows:
+            self.default_index = (self.default_index + 1) % len(rows)
+            self.status_message = "OK details"
+            return
+        if token not in ("ok", "exe") or not rows:
+            return
+
+        self.default_index = max(0, min(self.default_index, len(rows) - 1))
+        self.selected_default_name = rows[self.default_index]["name"]
+        self.view = VIEW_DEFAULT_DETAIL
+        self.status_message = "Read only"
+
+    def _handle_user_actions_token(self, token):
+        if self.popup is not None:
+            self._handle_popup_token(token)
+            return
+
+        if token == "back":
+            self.view = VIEW_USER_LIST
+            self.status_message = "OK actions"
+            return
+        if token == "nav_u":
+            self.action_index = (self.action_index - 1) % len(ACTION_ITEMS)
+            return
+        if token == "nav_d":
+            self.action_index = (self.action_index + 1) % len(ACTION_ITEMS)
+            return
+        if token not in ("ok", "exe"):
+            return
+
+        row = get_function(self.selected_user_name, scope="user")
+        if row is None:
+            self.view = VIEW_USER_LIST
+            self.status_message = "Function missing"
+            return
+
+        if self.action_index == 0:
+            self._open_create_form(row=row, return_view=VIEW_USER_ACTIONS)
+            return
+
+        self._activate_popup(
+            "Delete Function",
+            [
+                clip_text_px(self.selected_user_name, POPUP_W - 6),
+                "Delete this function?",
+            ],
+            "Cancel",
+            "Delete",
+            "delete",
+        )
+
+    def _handle_default_detail_token(self, token):
+        if token == "back":
+            self.view = VIEW_DEFAULT_LIST
+            self.status_message = "OK details"
+
+    def _meta_insert_token(self, token):
+        insert_text = _identifier_token(token)
+        if insert_text is None:
+            return
+
+        field_value = self._field_value(self.meta_field_index)
+        field_cursor = self._field_cursor(self.meta_field_index)
+        updated = (
+            field_value[:field_cursor]
+            + insert_text
+            + field_value[field_cursor:]
+        )
+        self._set_field_value(self.meta_field_index, updated)
+        self._set_field_cursor(self.meta_field_index, field_cursor + len(insert_text))
+        self._normalize_arg_fields()
+        self._reset_cursor_blink()
+
+    def _handle_meta_token(self, token):
+        if self.popup is not None:
+            self._handle_popup_token(token)
+            return
+
+        row_count = len(self._meta_rows())
+
+        if token == "back":
+            self.view = self.meta_return_view
+            self.status_message = "OK open" if self.view == VIEW_MENU else "OK actions"
+            return
+
+        if token == "nav_u":
+            self.meta_field_index = max(0, self.meta_field_index - 1)
+            self._reset_cursor_blink()
+            return
+
+        if token == "nav_d":
+            self.meta_field_index = min(row_count - 1, self.meta_field_index + 1)
+            self._reset_cursor_blink()
+            return
+
+        if token == "nav_l":
+            self._set_field_cursor(self.meta_field_index, self._field_cursor(self.meta_field_index) - 1)
+            self._reset_cursor_blink()
+            return
+
+        if token == "nav_r":
+            self._set_field_cursor(self.meta_field_index, self._field_cursor(self.meta_field_index) + 1)
+            self._reset_cursor_blink()
+            return
+
+        if token in ("nav_b", "undo"):
+            field_value = self._field_value(self.meta_field_index)
+            field_cursor = self._field_cursor(self.meta_field_index)
+            if field_cursor > 0:
+                updated = field_value[: field_cursor - 1] + field_value[field_cursor:]
+                self._set_field_value(self.meta_field_index, updated)
+                self._set_field_cursor(self.meta_field_index, field_cursor - 1)
+                self._normalize_arg_fields()
+            self._reset_cursor_blink()
+            return
+
+        if token == "AC":
+            self._set_field_value(self.meta_field_index, "")
+            self._set_field_cursor(self.meta_field_index, 0)
+            self._normalize_arg_fields()
+            self._reset_cursor_blink()
+            return
+
+        if token in ("ok", "exe"):
+            valid, message = self._validate_meta()
+            if not valid:
+                self.status_message = message
+                return
+
+            proposed_name = self.meta_name.strip()
+            if user_function_exists(proposed_name, exclude_name=self.editing_original_name):
+                self._activate_popup(
+                    "Name Exists",
+                    [
+                        "User function exists",
+                        clip_text_px(proposed_name, POPUP_W - 6),
+                    ],
+                    "Cancel",
+                    "Replace",
+                    "replace",
+                )
+                return
+
+            self._open_expression_editor()
+            return
+
+        self._meta_insert_token(token)
+
+    def _handle_expression_token(self, token):
+        if token == "back":
+            self._restore_expression_state()
+            self.view = VIEW_META
+            self.status_message = "OK next"
+            return
+
+        if token == "toolbox":
+            self.arg_index = 0
+            self.view = VIEW_ARG_PICKER
+            self.status_message = "OK insert"
+            return
+
+        if token in ("ok", "exe"):
+            success, message = self._validate_expression_and_save()
+            if success:
+                self.editor = None
+                return
+            self._set_message("Invalid Function", message, return_view=VIEW_EXPR)
+            return
+
+        if token in ("alpha", "beta"):
+            keypad_state_manager(x=token)
+            self.editor._reset_cursor_blink()
+            return
+
+        if token == "caps":
+            keypad_state_manager(x="A")
+            self.editor._reset_cursor_blink()
+            return
+
+        if token == "":
+            self.editor._reset_cursor_blink()
+            return
+
+        self.editor.handle_key(token)
+
+    def _handle_arg_picker_token(self, token):
+        rows = list(self.editor_args or [])
+        if token == "back":
+            self.view = VIEW_EXPR
+            self.status_message = ""
+            return
+        if token == "nav_u" and rows:
+            self.arg_index = (self.arg_index - 1) % len(rows)
+            return
+        if token == "nav_d" and rows:
+            self.arg_index = (self.arg_index + 1) % len(rows)
+            return
+        if token not in ("ok", "exe") or not rows:
+            return
+
+        self.arg_index = max(0, min(self.arg_index, len(rows) - 1))
+        self.view = VIEW_EXPR
+        self.editor.apply_pending_action({"type": "insert_text", "text": rows[self.arg_index]})
+        self.status_message = ""
+
+    def _handle_message_token(self, token):
+        if token in ("back", "ok", "exe"):
+            self.view = self.message_return_view
+            self.status_message = ""
+
+    def handle_token(self, token):
+        if self.view == VIEW_MENU:
+            self._handle_menu_token(token)
+            return
+        if self.view == VIEW_USER_LIST:
+            self._handle_user_list_token(token)
+            return
+        if self.view == VIEW_DEFAULT_LIST:
+            self._handle_default_list_token(token)
+            return
+        if self.view == VIEW_USER_ACTIONS:
+            self._handle_user_actions_token(token)
+            return
+        if self.view == VIEW_DEFAULT_DETAIL:
+            self._handle_default_detail_token(token)
+            return
+        if self.view == VIEW_META:
+            self._handle_meta_token(token)
+            return
+        if self.view == VIEW_EXPR:
+            self._handle_expression_token(token)
+            return
+        if self.view == VIEW_ARG_PICKER:
+            self._handle_arg_picker_token(token)
+            return
+        if self.view == VIEW_MESSAGE:
+            self._handle_message_token(token)
+
+    def _handle_mode_tokens(self, token):
+        if self.view != VIEW_EXPR and token in ("alpha", "beta"):
+            keypad_state_manager(x=token)
+            self.render()
+            return True
+        if self.view != VIEW_EXPR and token == "caps":
+            keypad_state_manager(x="A")
+            self.render()
+            return True
+        if self.view != VIEW_EXPR and token == "":
+            self.render()
+            return True
+        return False
+
+    def run(self):
+        ensure_default_functions()
+        keypad_state_manager_reset()
+        display.clear_display()
+        self.render()
+
+        try:
+            while True:
+                token = _read_key_with_local_back(idle_callback=self._idle_callback())
+
+                if token == "home":
+                    nav.set_restore_callback(None)
+                    request_navigation_from_key("home")
+                if token == "settings":
+                    nav.set_restore_callback(None)
+                    request_navigation_from_key("settings")
+                if token == "off":
+                    nav.set_restore_callback(None)
+                    return
+
+                if self._handle_mode_tokens(token):
+                    continue
+
+                self.handle_token(token)
+                self.render()
+        finally:
+            nav.set_restore_callback(None)
+            if self._calculate_save_restore is not None:
+                calculate_app._save_calculate_state = self._calculate_save_restore
+                self._calculate_save_restore = None
+
+
+def function_vault():
+    _FunctionVaultApp().run()

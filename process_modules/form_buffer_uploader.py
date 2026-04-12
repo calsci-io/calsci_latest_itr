@@ -360,6 +360,7 @@ class Tbf:
         self._cursor_visible = True
         self._cursor_last_toggle = _ticks_ms()
         self._cursor_signature = None
+        self.steady_bottom_page = True
 
     def _ui_style(self):
         return str(getattr(self.f_b, "ui_style", "") or "").strip().lower()
@@ -696,22 +697,16 @@ class Tbf:
             current = next_callable
         return current
 
-    def _flush(self, force=False):
+    def _flush_partial(self, framebuffer, flush_kwargs, force=False):
         graphics_callable = self.disp_out.graphics
-        flush_kwargs = {
-            "page": 0,
-            "column": 0,
-            "width": DISPLAY_WIDTH,
-            "pages": DISPLAY_PAGES,
-        }
 
         if not force:
-            graphics_callable(self.buf, **flush_kwargs)
+            graphics_callable(framebuffer, **flush_kwargs)
             return
 
         wrapped_flushed = False
         try:
-            graphics_callable(self.buf, **flush_kwargs)
+            graphics_callable(framebuffer, **flush_kwargs)
             wrapped_flushed = True
         except Exception:
             wrapped_flushed = False
@@ -719,7 +714,7 @@ class Tbf:
         raw_graphics = self._unwrap_graphics(graphics_callable)
         if callable(raw_graphics) and raw_graphics is not graphics_callable:
             try:
-                raw_graphics(self.buf, **flush_kwargs)
+                raw_graphics(framebuffer, **flush_kwargs)
                 return
             except Exception:
                 if wrapped_flushed:
@@ -727,7 +722,40 @@ class Tbf:
                 raise
 
         if not wrapped_flushed:
-            graphics_callable(self.buf, **flush_kwargs)
+            graphics_callable(framebuffer, **flush_kwargs)
+
+    def _flush_bottom_page(self, force=False):
+        bottom_page = max(0, DISPLAY_PAGES - 1)
+        start = bottom_page * DISPLAY_WIDTH
+        end = start + DISPLAY_WIDTH
+        page_buf = memoryview(self.buf)[start:end]
+        if self.nav is not None and hasattr(self.nav, "draw_bottom_page"):
+            self.nav.draw_bottom_page(page_buf, force=force)
+            return
+        self._flush_partial(
+            page_buf,
+            {
+                "page": bottom_page,
+                "column": 0,
+                "width": DISPLAY_WIDTH,
+                "pages": 1,
+            },
+            force=force,
+        )
+
+    def _flush(self, force=False):
+        flush_pages = DISPLAY_PAGES
+        if getattr(self, "steady_bottom_page", False):
+            flush_pages = max(1, DISPLAY_PAGES - 1)
+
+        flush_len = DISPLAY_WIDTH * flush_pages
+        flush_kwargs = {
+            "page": 0,
+            "column": 0,
+            "width": DISPLAY_WIDTH,
+            "pages": flush_pages,
+        }
+        self._flush_partial(memoryview(self.buf)[:flush_len], flush_kwargs, force=force)
 
     def _title_text(self):
         form_title = str(getattr(self.f_b, "title", "") or "").strip()
@@ -977,6 +1005,8 @@ class Tbf:
         state = str(state or "")
         if state != "":
             self._draw_state(state)
+        elif getattr(self, "steady_bottom_page", False):
+            self._flush_bottom_page(force=False)
 
         self.last_state = state
 
@@ -1745,6 +1775,8 @@ class Tbf:
         elif state == "":
             self._draw_custom_bottom_text()
         self._flush(force=force)
+        if getattr(self, "steady_bottom_page", False) and state == "":
+            self._flush_bottom_page(force=False)
 
         if self.nav is not None:
             nav_overlay_visible = (
@@ -1759,6 +1791,10 @@ class Tbf:
         self.last_state = state
 
     def restore_bottom_row(self):
+        if getattr(self, "steady_bottom_page", False):
+            self._flush_bottom_page(force=False)
+            self.last_state = ""
+            return
         if self._use_boxed_layout() or self._use_table_layout():
             self.refresh(state="")
             return

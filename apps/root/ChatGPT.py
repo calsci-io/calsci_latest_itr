@@ -481,15 +481,23 @@ class _ChatScreen:
         self.canvas.clear(0)
         self._draw_output_pane()
         self._draw_input_pane()
-        self.canvas.flush()
+        self.canvas.flush(page=0, pages=(DISPLAY_HEIGHT // 8) - 1)
         self._draw_nav_overlay()
+
+    def _flush_bottom_page(self):
+        bottom_page = (DISPLAY_HEIGHT // 8) - 1
+        start = bottom_page * DISPLAY_WIDTH
+        end = start + DISPLAY_WIDTH
+        nav.draw_bottom_page(memoryview(self.canvas.buf)[start:end])
 
     def _draw_nav_overlay(self):
         state = str(nav.current_state() or "")
         nav_overlay_visible = state != "" and nav.is_visible()
-        nav.set_restore_callback(self.render if nav_overlay_visible else None)
+        nav.set_restore_callback(self._flush_bottom_page if nav_overlay_visible else None)
         if nav_overlay_visible:
             nav.draw_state(state)
+        else:
+            self._flush_bottom_page()
 
 
 def _build_dummy_reply(_prompt):

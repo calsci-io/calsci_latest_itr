@@ -3,7 +3,8 @@
     "1": {
       "variables": ["r"],
       "name": "circle_area",
-      "expression": "pi * r**2"
+      "expression": "pi * r**2",
+      "scope": "default"
     }
   }
 }

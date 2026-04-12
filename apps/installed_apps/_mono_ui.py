@@ -48,13 +48,24 @@ class MonoCanvas:
     def clear(self, color=0):
         self.fb.fill(1 if color else 0)
 
-    def flush(self):
+    def flush(self, page=0, pages=None):
+        page = max(0, int(page))
+        if pages is None:
+            pages = DISPLAY_PAGES - page
+        pages = max(0, int(pages))
+        if pages <= 0 or page >= DISPLAY_PAGES:
+            return
+        if page + pages > DISPLAY_PAGES:
+            pages = DISPLAY_PAGES - page
+
+        start = page * DISPLAY_WIDTH
+        end = start + (pages * DISPLAY_WIDTH)
         display.graphics(
-            self.buf,
-            page=0,
+            memoryview(self.buf)[start:end],
+            page=page,
             column=0,
             width=DISPLAY_WIDTH,
-            pages=DISPLAY_PAGES,
+            pages=pages,
         )
 
     def rect(self, x, y, width, height, color=1):

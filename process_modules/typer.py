@@ -19,7 +19,8 @@ class Typer:
         self.keypad_map = keypad_map
         self.nav = nav
         self.debounce_delay_time = 0.2
-        self.min_debounce_delay_time = 0.12
+        self.min_debounce_delay_time = 0.0
+        self._latched_key = None
         self._switch_latched_key = None
         self._alpha_row = 0
         self._alpha_col = 1
@@ -208,10 +209,59 @@ class Typer:
         except Exception:
             pass
 
-    def start_typing(self):
-        time.sleep(self.debounce_delay_time)
+    def _scan_pressed_key(self):
         try:
-            key_inp = self.keypad.keypad_loop(idle_callback=self._idle_tasks)
+            rows = self.keypad.rows
+            cols = self.keypad.cols
+        except Exception:
+            return None
+
+        for row_idx, row_pin in enumerate(rows):
+            try:
+                Pin(row_pin, Pin.OUT).value(0)
+                for col_idx, col_pin in enumerate(cols):
+                    if Pin(col_pin, Pin.IN, Pin.PULL_UP).value() == 0:
+                        return (col_idx, row_idx)
+            except Exception:
+                pass
+            finally:
+                try:
+                    Pin(row_pin, Pin.OUT).value(1)
+                except Exception:
+                    pass
+        return None
+
+    def _scan_pause(self):
+        try:
+            delay = float(self.debounce_delay_time)
+        except Exception:
+            delay = 0.0
+        if delay <= 0:
+            return 0.0
+        return min(delay, 0.01)
+
+    def start_typing(self):
+        try:
+            pause = self._scan_pause()
+            key_inp = None
+
+            while key_inp is None:
+                self._idle_tasks()
+                scanned_key = self._scan_pressed_key()
+                if scanned_key is None:
+                    self._latched_key = None
+                    if pause > 0:
+                        time.sleep(pause)
+                    continue
+
+                if scanned_key == self._latched_key:
+                    if pause > 0:
+                        time.sleep(pause)
+                    continue
+
+                self._latched_key = scanned_key
+                key_inp = scanned_key
+
             col = int(key_inp[0])
             row = int(key_inp[1])
             self._handle_live_switch_shortcut(row=row, col=col)
@@ -240,6 +290,6 @@ class Typer:
     def debounce_delay(self, t=None):
         if t is None:
             return self.debounce_delay_time
-        if isinstance(t, (int, float)) and t >= self.min_debounce_delay_time:
-            self.debounce_delay_time = t
+        if isinstance(t, (int, float)):
+            self.debounce_delay_time = max(self.min_debounce_delay_time, float(t))
         return self.debounce_delay_time
