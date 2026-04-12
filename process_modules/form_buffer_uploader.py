@@ -827,6 +827,30 @@ class Tbf:
             return ""
         return str(self.f_b.inp_list().get(cell_key, " ") or " ").rstrip()
 
+    def _table_row_label(self, row_index, selected_col):
+        provider = getattr(self.f_b, "table_row_label_provider", None)
+        if callable(provider):
+            try:
+                return _display_text(provider(int(row_index), int(selected_col)))
+            except Exception:
+                pass
+
+        row_labels = list(getattr(self.f_b, "table_row_labels", []) or [])
+        if 0 <= int(row_index) < len(row_labels):
+            return _display_text(row_labels[int(row_index)])
+        return ""
+
+    def _table_active_label(self, selected_row, selected_col, default_text):
+        active_label = str(getattr(self.f_b, "table_active_label", "") or "")
+        if active_label != "":
+            return _display_text(active_label)
+
+        row_label = self._table_row_label(selected_row, selected_col)
+        if row_label != "":
+            return row_label
+
+        return _display_text(default_text)
+
     def _draw_table_grid_cell(self, x, y, width, height, text_value, selected=False, header=False):
         x = int(x)
         y = int(y)
@@ -881,7 +905,11 @@ class Tbf:
             max(0, col_count - visible_cols),
         )
 
-        label_text = _display_text(headers[selected_col] if selected_col < len(headers) else "")
+        label_text = self._table_active_label(
+            selected_row,
+            selected_col,
+            headers[selected_col] if selected_col < len(headers) else "",
+        )
         if label_text == "":
             label_text = "Cell"
 
@@ -953,18 +981,48 @@ class Tbf:
                 align="center",
             )
 
+        show_scrollbars = bool(getattr(self.f_b, "table_show_scrollbars", False))
+        row_header_w = max(0, int(getattr(self.f_b, "table_row_header_w", 0) or 0))
+        if row_header_w > DISPLAY_WIDTH - 24:
+            row_header_w = max(0, DISPLAY_WIDTH - 24)
+        v_scroll_w = 4 if show_scrollbars and row_count > visible_rows else 0
+        h_scroll_h = 4 if show_scrollbars and col_count > visible_cols else 0
+
         grid_y = 12
-        grid_h = DISPLAY_HEIGHT - grid_y
+        grid_x = row_header_w
+        grid_w = DISPLAY_WIDTH - grid_x - v_scroll_w
+        grid_h = DISPLAY_HEIGHT - grid_y - h_scroll_h
+        if grid_w < max(16, visible_cols * 10):
+            grid_w = max(16, DISPLAY_WIDTH - grid_x)
+            v_scroll_w = 0
+        if grid_h < max(12, (visible_rows + 1) * 6):
+            grid_h = DISPLAY_HEIGHT - grid_y
+            h_scroll_h = 0
+
         total_grid_rows = visible_rows + 1
+        header_y = grid_y
+        next_header_y = grid_y + (grid_h // total_grid_rows)
+        header_h = max(1, next_header_y - header_y)
+
+        if row_header_w > 0:
+            row_header_title = _display_text(getattr(self.f_b, "table_row_header_title", "") or "")
+            if row_header_title == "":
+                row_header_title = "#"
+            self._draw_table_grid_cell(
+                0,
+                header_y,
+                row_header_w,
+                header_h,
+                row_header_title,
+                selected=False,
+                header=True,
+            )
 
         for visible_col in range(visible_cols):
             global_col = col_offset + visible_col
-            cell_x = (DISPLAY_WIDTH * visible_col) // visible_cols
-            next_x = (DISPLAY_WIDTH * (visible_col + 1)) // visible_cols
+            cell_x = grid_x + (grid_w * visible_col) // visible_cols
+            next_x = grid_x + (grid_w * (visible_col + 1)) // visible_cols
             cell_w = max(1, next_x - cell_x)
-            header_y = grid_y
-            next_header_y = grid_y + (grid_h // total_grid_rows)
-            header_h = max(1, next_header_y - header_y)
             self._draw_table_grid_cell(
                 cell_x,
                 header_y,
@@ -980,6 +1038,16 @@ class Tbf:
                 row_y = grid_y + (grid_h * (visible_row + 1)) // total_grid_rows
                 next_row_y = grid_y + (grid_h * (visible_row + 2)) // total_grid_rows
                 row_h = max(1, next_row_y - row_y)
+                if row_header_w > 0 and visible_col == 0:
+                    self._draw_table_grid_cell(
+                        0,
+                        row_y,
+                        row_header_w,
+                        row_h,
+                        self._table_row_label(global_row, selected_col),
+                        selected=False,
+                        header=False,
+                    )
                 self._draw_table_grid_cell(
                     cell_x,
                     row_y,
@@ -989,6 +1057,30 @@ class Tbf:
                     selected=global_row == selected_row and global_col == selected_col,
                     header=False,
                 )
+
+        if v_scroll_w > 0:
+            track_x = DISPLAY_WIDTH - v_scroll_w
+            track_y = header_y + header_h
+            track_h = max(6, grid_h - header_h)
+            self._rect(track_x, track_y, v_scroll_w, track_h, 1)
+            thumb_h = max(8, ((track_h - 2) * visible_rows) // max(1, row_count))
+            thumb_h = min(max(1, track_h - 2), thumb_h)
+            max_top = max(1, row_count - visible_rows)
+            thumb_range = max(0, (track_h - 2) - thumb_h)
+            thumb_y = track_y + 1 + (row_offset * thumb_range // max_top)
+            self._fill_rect(track_x + 1, thumb_y, max(1, v_scroll_w - 2), thumb_h, 1)
+
+        if h_scroll_h > 0:
+            track_x = grid_x
+            track_y = DISPLAY_HEIGHT - h_scroll_h
+            track_w = max(8, grid_w)
+            self._rect(track_x, track_y, track_w, h_scroll_h, 1)
+            thumb_w = max(8, ((track_w - 2) * visible_cols) // max(1, col_count))
+            thumb_w = min(max(1, track_w - 2), thumb_w)
+            max_left = max(1, col_count - visible_cols)
+            thumb_range = max(0, (track_w - 2) - thumb_w)
+            thumb_x = track_x + 1 + (col_offset * thumb_range // max_left)
+            self._fill_rect(thumb_x, track_y + 1, thumb_w, max(1, h_scroll_h - 2), 1)
 
         self._flush(force=force)
 

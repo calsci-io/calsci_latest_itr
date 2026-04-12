@@ -43,6 +43,11 @@
         "name": "function_vault",
         "folder":"application_modules",
         "visibility": true
+    },
+    {
+        "name": "spreadsheet",
+        "folder":"application_modules",
+        "visibility": true
     }
     
 ]

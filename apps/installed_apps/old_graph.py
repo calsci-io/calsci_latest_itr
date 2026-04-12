@@ -59,6 +59,17 @@ def _ticks_add(base_ms, delta_ms):
     return base_ms + delta_ms
 
 
+def _ticks_ms():
+    try:
+        return int(time.ticks_ms())
+    except AttributeError:
+        pass
+    try:
+        return int(time.time() * 1000)
+    except Exception:
+        return 0
+
+
 def _back_guard_duration_ms(base_delay_sec=None):
     debounce_ms = 0
     try:
@@ -637,6 +648,9 @@ HOME_HFIELD_LABEL_W = 15
 HOME_HFIELD_LABEL_PAD_X = 0
 OLD_GRAPH_STATE_PATHS = ("/db/old_graph_state.json", "db/old_graph_state.json")
 _old_graph_state_cache = None
+_old_graph_state_pending = None
+_old_graph_state_pending_since = 0
+OLD_GRAPH_STATE_IDLE_FLUSH_MS = 600
 
 GRAPH_TYPE_RECT = "rect"
 GRAPH_TYPE_POLAR = "polar"
@@ -856,6 +870,12 @@ def _serialize_graph_state(graph_state):
 
 def _load_saved_graph_state():
     global _old_graph_state_cache
+    global _old_graph_state_pending
+    global _old_graph_state_pending_since
+
+    _old_graph_state_cache = None
+    _old_graph_state_pending = None
+    _old_graph_state_pending_since = 0
 
     payload = _load_json_from_paths(OLD_GRAPH_STATE_PATHS)
     if not isinstance(payload, dict):
@@ -895,14 +915,60 @@ def _load_saved_graph_state():
     return graph_state
 
 
-def _save_old_graph_state(graph_state):
+def _write_old_graph_state(graph_state):
     global _old_graph_state_cache
 
     payload = _serialize_graph_state(graph_state)
     if payload == _old_graph_state_cache:
-        return
+        return True
     if _save_json_to_paths(OLD_GRAPH_STATE_PATHS, payload):
         _old_graph_state_cache = payload
+        return True
+    return False
+
+
+def _save_old_graph_state(graph_state, force=False):
+    global _old_graph_state_pending
+    global _old_graph_state_pending_since
+
+    if graph_state is None:
+        return False
+
+    if force:
+        saved = _write_old_graph_state(graph_state)
+        if saved and _old_graph_state_pending is graph_state:
+            _old_graph_state_pending = None
+            _old_graph_state_pending_since = 0
+        return saved
+
+    _old_graph_state_pending = graph_state
+    _old_graph_state_pending_since = _ticks_ms()
+    return False
+
+
+def _flush_pending_old_graph_state(force=False):
+    global _old_graph_state_pending
+    global _old_graph_state_pending_since
+
+    graph_state = _old_graph_state_pending
+    if graph_state is None:
+        return False
+
+    if not force:
+        pending_since = int(_old_graph_state_pending_since or 0)
+        if pending_since > 0 and _ticks_diff(_ticks_ms(), pending_since) < OLD_GRAPH_STATE_IDLE_FLUSH_MS:
+            return False
+
+    saved = _write_old_graph_state(graph_state)
+    if saved:
+        _old_graph_state_pending = None
+        _old_graph_state_pending_since = 0
+    return saved
+
+
+def _save_old_graph_state_from_form(graph_state, force=False, active_only=False):
+    _sync_graph_state_from_form(graph_state, active_only=active_only)
+    _save_old_graph_state(graph_state, force=force)
 
 
 def _create_graph_home_state():
@@ -1000,18 +1066,17 @@ def _graph_index_from_form():
         return None
 
 
-def _sync_graph_state_from_form(graph_state):
-    for index, graph in enumerate(graph_state["graphs"]):
-        value = str(form.input_list.get(_graph_input_key(index), " ") or " ").strip()
-        graph["expr"] = value
+def _sync_graph_state_from_form(graph_state, active_only=False):
     focus_index = _graph_index_from_form()
+    if active_only and focus_index is not None and 0 <= focus_index < len(graph_state["graphs"]):
+        value = str(form.input_list.get(_graph_input_key(focus_index), " ") or " ").strip()
+        graph_state["graphs"][focus_index]["expr"] = value
+    else:
+        for index, graph in enumerate(graph_state["graphs"]):
+            value = str(form.input_list.get(_graph_input_key(index), " ") or " ").strip()
+            graph["expr"] = value
     if focus_index is not None and 0 <= focus_index < len(graph_state["graphs"]):
         graph_state["focus_graph_index"] = focus_index
-
-
-def _save_old_graph_state_from_form(graph_state):
-    _sync_graph_state_from_form(graph_state)
-    _save_old_graph_state(graph_state)
 
 
 def _apply_home_form(graph_state):
@@ -3658,6 +3723,10 @@ def old_graph(db={}):
                 nav.maybe_hide()
             except Exception:
                 pass
+        try:
+            _flush_pending_old_graph_state(force=False)
+        except Exception:
+            pass
 
         if form_refresh is None:
             return
@@ -3688,6 +3757,10 @@ def old_graph(db={}):
                 nav.maybe_hide()
             except Exception:
                 pass
+        try:
+            _flush_pending_old_graph_state(force=False)
+        except Exception:
+            pass
         try:
             _refresh_plot_navbar(
                 graph_state,
@@ -4256,14 +4329,14 @@ def old_graph(db={}):
 
             elif inp not in ("ok",):
                 form.update_buffer(inp)
-                _save_old_graph_state_from_form(graph_state)
+                _save_old_graph_state_from_form(graph_state, active_only=True)
 
             _refresh_home_form(graph_state)
 
     finally:
         if graph_state is not None:
             try:
-                _save_old_graph_state(graph_state)
+                _save_old_graph_state(graph_state, force=True)
             except Exception:
                 pass
         try:

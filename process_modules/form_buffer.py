@@ -49,6 +49,12 @@ class Form:
         self.table_visible_rows = 4
         self.table_visible_cols = 5
         self.table_input_cols = 10
+        self.table_row_labels = []
+        self.table_row_header_w = 0
+        self.table_show_scrollbars = False
+        self.table_row_label_provider = None
+        self.table_active_label = ""
+        self.table_row_header_title = ""
         self.table_cursor_row = 0
         self.table_cursor_col = 0
         self.table_row_offset = 0
@@ -87,6 +93,9 @@ class Form:
         visible_rows=4,
         visible_cols=None,
         input_cols=10,
+        row_labels=None,
+        row_header_w=0,
+        show_scrollbars=False,
         button_text="Ok",
         show_button=True,
     ):
@@ -140,6 +149,12 @@ class Form:
         self.table_visible_rows = max(1, int(visible_rows or 1))
         self.table_visible_cols = max(1, int(visible_cols or 1))
         self.table_input_cols = max(1, int(input_cols or 1))
+        self.table_row_labels = list(row_labels or [])
+        self.table_row_header_w = max(0, int(row_header_w or 0))
+        self.table_show_scrollbars = bool(show_scrollbars)
+        self.table_row_label_provider = None
+        self.table_active_label = ""
+        self.table_row_header_title = ""
         self.table_cursor_row = 0
         self.table_cursor_col = 0
         self.table_row_offset = 0
