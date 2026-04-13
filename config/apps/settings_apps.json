@@ -1,0 +1,82 @@
+[
+  {
+    "app_id": "backlight_setting",
+    "title": "Backlight",
+    "module": "apps.builtins.backlight_setting",
+    "group": "settings",
+    "order": 10
+  },
+  {
+    "app_id": "wifi_manager",
+    "title": "WiFi",
+    "module": "apps.builtins.wifi_manager",
+    "group": "settings",
+    "order": 20
+  },
+  {
+    "app_id": "network_status",
+    "title": "Network Status",
+    "module": "apps.builtins.status_page",
+    "group": "settings",
+    "order": 30,
+    "metadata": {
+      "status_kind": "network"
+    }
+  },
+  {
+    "app_id": "dark_mode_setting",
+    "title": "Dark Mode",
+    "module": "apps.builtins.toggle_setting",
+    "group": "settings",
+    "order": 40,
+    "metadata": {
+      "setting_key": "dark_mode",
+      "description": "Invert the display theme."
+    }
+  },
+  {
+    "app_id": "device_info",
+    "title": "Device Info",
+    "module": "apps.builtins.status_page",
+    "group": "settings",
+    "order": 50,
+    "metadata": {
+      "status_kind": "device"
+    }
+  },
+  {
+    "app_id": "auto_wifi_setting",
+    "title": "Auto WiFi",
+    "module": "apps.builtins.toggle_setting",
+    "group": "settings",
+    "order": 60,
+    "metadata": {
+      "setting_key": "auto_wifi_connect",
+      "description": "Reconnect using saved credentials."
+    }
+  },
+  {
+    "app_id": "auto_sleep_setting",
+    "title": "Auto Sleep",
+    "module": "apps.builtins.auto_sleep_setting",
+    "group": "settings",
+    "order": 70
+  },
+  {
+    "app_id": "battery_status",
+    "title": "Battery",
+    "module": "apps.builtins.status_page",
+    "group": "settings",
+    "order": 80,
+    "metadata": {
+      "status_kind": "battery"
+    }
+  },
+  {
+    "app_id": "software_update",
+    "title": "Software Update",
+    "module": "apps.builtins.software_update",
+    "group": "settings",
+    "order": 90
+  }
+]

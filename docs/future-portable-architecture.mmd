@@ -1,0 +1,79 @@
+flowchart TD
+    subgraph FOUNDATION["foundation"]
+        F1["runtime<br/>kernel / router / events / tasks / lifecycle"]
+        F2["ui_core<br/>screens / canvas / layout / renderer contracts / input model"]
+        F3["ports<br/>display / input / storage / network / power / clock"]
+        F4["infra<br/>manifest / config / fscompat / errors"]
+    end
+
+    subgraph PRODUCTS["products"]
+        P1["products/calsci/domain<br/>calc / graph / matrix / latex"]
+        P2["products/calsci/application<br/>services / commands / policies"]
+        P3["products/calsci/ui<br/>shell renderer / theme / keypad maps / widgets"]
+        P4["products/calsci/apps<br/>builtins / optional"]
+        P5["products/calsci/manifests + defaults + migration"]
+    end
+
+    subgraph PLATFORMS["platforms"]
+        X1["esp32<br/>adapters / drivers / firmware_api"]
+        X2["rp2040<br/>adapters / drivers / firmware_api"]
+        X3["stm32<br/>adapters / drivers / firmware_api"]
+        X4["sim_pygame<br/>adapters / host_ui"]
+    end
+
+    subgraph BOARDS["boards"]
+        B1["esp32/calsci_s3<br/>pins / features / display / keypad"]
+        B2["rp2040/<board_name>"]
+        B3["stm32/<board_name>"]
+    end
+
+    subgraph TARGETS["targets"]
+        T1["calsci_esp32s3<br/>compose product + platform + board"]
+        T2["calsci_rp2040<br/>compose product + platform + board"]
+        T3["calsci_stm32<br/>compose product + platform + board"]
+        T4["calsci_sim<br/>compose product + sim platform"]
+    end
+
+    F1 --> P2
+    F2 --> P3
+    F2 --> P4
+    F3 --> P2
+    F4 --> P5
+
+    P1 --> P2
+    P2 --> P4
+    P3 --> P4
+    P5 --> P4
+
+    F3 --> X1
+    F3 --> X2
+    F3 --> X3
+    F3 --> X4
+
+    X1 --> B1
+    X2 --> B2
+    X3 --> B3
+
+    P4 --> T1
+    P4 --> T2
+    P4 --> T3
+    P4 --> T4
+
+    X1 --> T1
+    X2 --> T2
+    X3 --> T3
+    X4 --> T4
+
+    B1 --> T1
+    B2 --> T2
+    B3 --> T3
+
+    N1["Rule:<br/>foundation knows nothing about CalSci or any chip"]
+    N2["Rule:<br/>platforms implement ports"]
+    N3["Rule:<br/>boards are data/config, not product logic"]
+    N4["Rule:<br/>targets are the only composition roots"]
+
+    FOUNDATION --> N1
+    PLATFORMS --> N2
+    BOARDS --> N3
+    TARGETS --> N4

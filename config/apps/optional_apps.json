@@ -1,0 +1,20 @@
+[
+  {
+    "app_id": "add_2_nums",
+    "title": "Add 2 Nums",
+    "module": "apps.optional.add_2_nums",
+    "group": "installed",
+    "order": 10,
+    "kind": "optional",
+    "installed": true
+  },
+  {
+    "app_id": "utc_time",
+    "title": "Indian Time",
+    "module": "apps.optional.utc_time",
+    "group": "installed",
+    "order": 20,
+    "kind": "optional",
+    "installed": true
+  }
+]

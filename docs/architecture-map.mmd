@@ -1,0 +1,134 @@
+flowchart TD
+    A["boot.py / main.py"] --> B["core/bootstrap.py<br/>build_container()"]
+
+    subgraph CORE["core"]
+        B --> C["AppContext"]
+        B --> D["Router"]
+        B --> E["EventBus"]
+        B --> F["TaskManager"]
+        B --> G["AppRegistry"]
+        B --> H["RuntimeKernel"]
+        B --> I["StateStore"]
+        B --> J["legacy_import.ensure_manifest_layout()"]
+    end
+
+    subgraph CONFIG["config"]
+        K["config/system.json"] --> B
+        L["config/apps/*.json"] --> G
+    end
+
+    subgraph ADAPTERS["adapters/device"]
+        M["DisplayAdapter"]
+        N["InputAdapter"]
+        O["NetworkAdapter"]
+        P["PowerAdapter"]
+        Q["StorageAdapter"]
+    end
+
+    subgraph SERVICES["services"]
+        R["RenderService"]
+        S["InputService"]
+        T["NetworkService"]
+        U["PowerService"]
+        V["StorageService"]
+        W["CalcService"]
+        X["GraphService"]
+        Y["MatrixService"]
+        Z["TimeService"]
+        AA["SearchService"]
+        AB["LatexService"]
+    end
+
+    Q --> V
+    M --> R
+    N --> S
+    O --> T
+    P --> U
+
+    V --> B
+    V --> J
+
+    B --> R
+    B --> S
+    B --> T
+    B --> U
+    B --> V
+    B --> W
+    B --> X
+    B --> Y
+    B --> Z
+    B --> AA
+    B --> AB
+
+    C --> R
+    C --> S
+    C --> T
+    C --> U
+    C --> V
+    C --> W
+    C --> X
+    C --> Y
+    C --> Z
+    C --> AA
+    C --> AB
+
+    G --> AC["apps/builtins/*"]
+    G --> AD["apps/optional/*"]
+
+    H --> S
+    H --> E
+    H --> D
+    H --> G
+    H --> AC
+    H --> AD
+    H --> R
+
+    subgraph APP_CONTRACT["app contract"]
+        AE["BaseApp"]
+        AF["AppManifest"]
+    end
+
+    G --> AF
+    AC --> AE
+    AD --> AE
+
+    subgraph UI["ui"]
+        AG["MenuScreen"]
+        AH["TextScreen"]
+        AI["FormScreen"]
+        AJ["CanvasScreen"]
+        AK["LegacyShellRenderer"]
+        AL["MonoCanvas"]
+        AM["font/theme/components"]
+    end
+
+    AC --> AG
+    AC --> AH
+    AC --> AI
+    AC --> AJ
+    AD --> AG
+    AD --> AH
+    AD --> AI
+    AD --> AJ
+
+    R --> AK
+    R --> AJ
+    AK --> AL
+    AK --> AM
+    AL --> M
+    AJ --> M
+
+    subgraph DATA["runtime data"]
+        AN["data/settings.json"]
+        AO["data/wifi_credentials.json"]
+        AP["data/functions.json"]
+        AQ["data/installed_apps.json"]
+    end
+
+    V --> AN
+    V --> AO
+    V --> AP
+    V --> AQ
+
+    note1["Main flow:<br/>input -> event bus -> active app -> screen model -> shared renderer -> framebuffer sink"]
+    H --> note1

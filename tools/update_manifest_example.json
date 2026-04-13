@@ -1,0 +1,15 @@
+{
+  "product": "calsci_v1",
+  "version": "1.0.1",
+  "base_url": "https://raw.githubusercontent.com/calsci-io/calsci_latest_itr/calsci_v1/update/files",
+  "files": [
+    {
+      "path": "apps/builtins/calculate.py",
+      "sha256": "PUT_SHA256_OF_FILE_CONTENT_HERE"
+    },
+    {
+      "path": "config/apps/settings_apps.json",
+      "sha256": "PUT_SHA256_OF_FILE_CONTENT_HERE"
+    }
+  ]
+}

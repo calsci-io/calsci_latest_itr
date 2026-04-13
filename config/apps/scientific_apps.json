@@ -1,0 +1,16 @@
+[
+  {
+    "app_id": "graph_plotter",
+    "title": "Graph",
+    "module": "apps.builtins.graph_plotter",
+    "group": "scientific",
+    "order": 10
+  },
+  {
+    "app_id": "matrix_tools",
+    "title": "Matrix Tools",
+    "module": "apps.builtins.matrix_tools",
+    "group": "scientific",
+    "order": 20
+  }
+]

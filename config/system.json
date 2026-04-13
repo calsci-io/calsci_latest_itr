@@ -1,0 +1,9 @@
+{
+  "default_route": "launcher",
+  "task_workers": 2,
+  "legacy_root": "/home/rupesh/calsci/calsci_latest_itr",
+  "data_dir": "data",
+  "software_version": "calsci_v1",
+  "update_product": "calsci_v1",
+  "update_manifest_url": "https://raw.githubusercontent.com/calsci-io/calsci_latest_itr/calsci_v1/update/manifest.json"
+}

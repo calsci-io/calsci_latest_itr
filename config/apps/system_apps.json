@@ -1,0 +1,14 @@
+[
+  {
+    "app_id": "launcher",
+    "title": "CalSci",
+    "module": "apps.builtins.launcher",
+    "group": "system",
+    "order": 0,
+    "metadata": {
+      "child_group": "launcher",
+      "subtitle": "Modular Runtime",
+      "empty_message": "No launcher apps"
+    }
+  }
+]

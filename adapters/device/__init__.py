@@ -1,0 +1,2 @@
+# Device adapter package marker.
+

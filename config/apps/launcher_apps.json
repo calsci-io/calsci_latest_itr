@@ -1,0 +1,67 @@
+[
+  {
+    "app_id": "calculate",
+    "title": "Calculate",
+    "module": "apps.builtins.calculate",
+    "group": "launcher",
+    "order": 10
+  },
+  {
+    "app_id": "settings_hub",
+    "title": "Settings",
+    "module": "apps.builtins.settings_hub",
+    "group": "launcher",
+    "order": 20,
+    "metadata": {
+      "child_group": "settings",
+      "back_route": "launcher",
+      "subtitle": "Device + runtime"
+    }
+  },
+  {
+    "app_id": "chatgpt",
+    "title": "ChatGPT",
+    "module": "apps.builtins.chatgpt",
+    "group": "launcher",
+    "order": 30
+  },
+  {
+    "app_id": "installed_hub",
+    "title": "Installed Apps",
+    "module": "apps.builtins.installed_hub",
+    "group": "launcher",
+    "order": 40,
+    "metadata": {
+      "child_group": "installed",
+      "back_route": "launcher",
+      "subtitle": "Optional modules",
+      "empty_message": "No installed apps"
+    }
+  },
+  {
+    "app_id": "scientific_hub",
+    "title": "Scientific",
+    "module": "apps.builtins.scientific_hub",
+    "group": "launcher",
+    "order": 50,
+    "metadata": {
+      "child_group": "scientific",
+      "back_route": "launcher",
+      "subtitle": "Graph + matrix"
+    }
+  },
+  {
+    "app_id": "function_locker",
+    "title": "Function Locker",
+    "module": "apps.builtins.function_locker",
+    "group": "launcher",
+    "order": 60
+  },
+  {
+    "app_id": "latex_calc",
+    "title": "LaTeX Calc",
+    "module": "apps.builtins.latex_calc",
+    "group": "launcher",
+    "order": 70
+  }
+]
