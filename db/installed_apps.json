@@ -43,6 +43,10 @@
     "11": {
       "app_name": "table_buffer_demo",
       "group_name": "installed_apps"
+    },
+    "12": {
+      "app_name": "professor_panda",
+      "group_name": "installed_apps"
     }
   }
 }

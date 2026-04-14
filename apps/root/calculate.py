@@ -37,6 +37,7 @@ from apps.installed_apps._mono_ui import (
     MonoCanvas,
     clip_text_px,
 )
+from apps.root.constant_store import list_runtime_constants
 from apps.root.function_store import list_runtime_functions
 from data_modules.characters import Characters
 from data_modules.math_symbols import PI_CHAR, normalize_expression, normalize_pi_token
@@ -180,11 +181,72 @@ _BASE_SAFE_GLOBALS = {
 SAFE_GLOBALS = {}
 
 
+def _coerce_numeric_value(value):
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    raise ValueError("Non numeric")
+
+
+def _evaluate_constant_value(expression, safe_globals):
+    value = eval(normalize_expression(expression), safe_globals, {})
+    return _coerce_numeric_value(value)
+
+
+def _load_runtime_constants_into_globals(safe_globals, exclude_name=None):
+    exclude_name = str(exclude_name or "").strip()
+    pending = []
+    for row in list_runtime_constants():
+        name = str(row.get("name") or "").strip()
+        value = str(row.get("value") or "").strip()
+        if name == "" or value == "" or name == exclude_name:
+            continue
+        pending.append((name, value))
+
+    while pending:
+        next_pending = []
+        progressed = False
+        for name, value in pending:
+            try:
+                safe_globals[name] = _evaluate_constant_value(value, safe_globals)
+                progressed = True
+            except Exception:
+                next_pending.append((name, value))
+        if not progressed:
+            break
+        pending = next_pending
+
+
+def build_runtime_safe_globals(exclude_function_name=None, exclude_constant_name=None):
+    exclude_function_name = str(exclude_function_name or "").strip()
+    safe_globals = dict(_BASE_SAFE_GLOBALS)
+    safe_globals["ans"] = ans[0]
+    _load_runtime_constants_into_globals(safe_globals, exclude_name=exclude_constant_name)
+
+    for row in list_runtime_functions():
+        name = str(row.get("name") or "").strip()
+        variables = row.get("variables")
+        expression = row.get("expression")
+
+        if name == "" or name == exclude_function_name or not variables or not expression:
+            continue
+
+        func_def = {
+            "variables": variables,
+            "expression": expression,
+        }
+        safe_globals[name] = build_function(func_def, safe_globals)
+
+    return safe_globals
+
+
 def load_all_functions():
     FUNCTIONS.clear()
     SAFE_GLOBALS.clear()
     SAFE_GLOBALS.update(_BASE_SAFE_GLOBALS)
     SAFE_GLOBALS["ans"] = ans[0]
+    _load_runtime_constants_into_globals(SAFE_GLOBALS)
 
     for row in list_runtime_functions():
         name = row.get("name")

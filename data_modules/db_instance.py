@@ -13,3 +13,4 @@ except Exception:
 from tinydb import TinyDB
 
 fun_db = TinyDB("db/functions_data.json")
+const_db = TinyDB("db/constants_data.json")

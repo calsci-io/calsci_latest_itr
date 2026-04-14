@@ -40,7 +40,7 @@
         "visibility": false
     },
     {
-        "name": "function_vault",
+        "name": "vault",
         "folder":"application_modules",
         "visibility": true
     },

@@ -34,7 +34,7 @@ except Exception:
 from apps.installed_apps._mono_ui import CHAR_ADVANCE, CHAR_HEIGHT, DISPLAY_HEIGHT, DISPLAY_WIDTH, MonoCanvas, clip_text_px
 from apps.root import calculate as calculate_app
 from apps.root.function_store import ensure_default_functions, get_function, list_default_functions, list_user_functions
-from data_modules.math_symbols import normalize_expression
+from data_modules.math_symbols import normalize_expression, normalize_pi_token
 from data_modules.object_handler import form, form_refresh, keyin, keymap, keypad_state_manager, keypad_state_manager_reset, nav, typer
 from process_modules.keypad_modes import reset_mode, should_auto_reset_after_input, toggle_mode_lock
 from process_modules.navigation import request_navigation_from_key
@@ -191,6 +191,10 @@ def _capture_form_state():
         "table_col_offset": getattr(form, "table_col_offset", 0),
         "table_show_button": getattr(form, "table_show_button", True),
         "table_button_text": getattr(form, "table_button_text", "Ok"),
+        "has_table_editor_text": hasattr(form, "table_editor_text"),
+        "table_editor_text": getattr(form, "table_editor_text", ""),
+        "table_editor_cursor": getattr(form, "table_editor_cursor", 0),
+        "table_editor_display_position": getattr(form, "table_editor_display_position", 0),
     }
 
 
@@ -221,6 +225,14 @@ def _restore_form_state(previous):
     form.table_col_offset = previous["table_col_offset"]
     form.table_show_button = previous["table_show_button"]
     form.table_button_text = previous["table_button_text"]
+    if previous["has_table_editor_text"]:
+        form.table_editor_text = previous["table_editor_text"]
+        form.table_editor_cursor = previous["table_editor_cursor"]
+        form.table_editor_display_position = previous["table_editor_display_position"]
+    else:
+        for attr_name in ("table_editor_text", "table_editor_cursor", "table_editor_display_position"):
+            if hasattr(form, attr_name):
+                delattr(form, attr_name)
     form.update()
     form_refresh.refresh(state=nav.current_state())
 
@@ -275,6 +287,10 @@ class _SpreadsheetApp:
         self._state_pending = False
         self._state_pending_since = 0
         self._eval_safe_globals = None
+        self.sheet_edit_mode = False
+        self.table_editor_text = ""
+        self.table_editor_cursor = 0
+        self.table_editor_display_position = 0
 
     def _column_label(self, col_index):
         if 0 <= int(col_index) < len(_BASE_COLUMN_LABELS):
@@ -488,6 +504,88 @@ class _SpreadsheetApp:
             expression = "<empty>"
         return "{} = {}".format(self._column_label(col_index), expression)
 
+    def _column_index_from_label(self, label):
+        label = str(label or "").strip().upper()
+        for col_index in range(COLUMN_COUNT):
+            if self._column_label(col_index).upper() == label:
+                return col_index
+        return None
+
+    def _function_formula_text(self, spec):
+        name = str(spec.get("name") or "").strip()
+        if name == "":
+            return ""
+
+        function_row = get_function(name, scope=spec.get("scope"))
+        arg_columns = list(spec.get("arg_columns") or [])
+        arg_count = len(function_row.get("variables") or []) if function_row is not None else len(arg_columns)
+        args = []
+        for arg_index in range(arg_count):
+            source_col = arg_columns[arg_index] if arg_index < len(arg_columns) else 0
+            try:
+                source_col = int(source_col)
+            except Exception:
+                source_col = 0
+            if 0 <= source_col < COLUMN_COUNT:
+                args.append(self._column_label(source_col))
+        return "{}({})".format(name, ", ".join(args))
+
+    def _formula_input_text(self, col_index):
+        spec = self.column_formulas[col_index]
+        if not isinstance(spec, dict):
+            return ""
+        if str(spec.get("type") or "") == "function":
+            return self._function_formula_text(spec)
+        return str(spec.get("expression") or "").strip()
+
+    def _formula_edit_text(self, col_index):
+        formula_text = self._formula_input_text(col_index)
+        if formula_text == "":
+            return ""
+        return "=" + formula_text
+
+    def _cell_preview_text(self, row_index, col_index):
+        if self.column_formulas[col_index] is not None:
+            return self._cell_display(row_index, col_index, {})
+        return str(self.rows[row_index][col_index] or "")
+
+    def _cell_edit_text(self, row_index, col_index):
+        if self.column_formulas[col_index] is not None:
+            return self._formula_edit_text(col_index)
+        return str(self.rows[row_index][col_index] or "")
+
+    def _sync_table_editor_view(self, prefer_end=False):
+        text_value = str(self.table_editor_text or "")
+        max_cursor = len(text_value)
+        if prefer_end:
+            self.table_editor_cursor = max_cursor
+        else:
+            self.table_editor_cursor = min(max(0, int(self.table_editor_cursor or 0)), max_cursor)
+
+        visible_chars = max(1, INPUT_COLS)
+        max_display = max(0, len(text_value) - visible_chars)
+        self.table_editor_display_position = min(
+            max(0, int(self.table_editor_display_position or 0)),
+            max_display,
+        )
+        if self.table_editor_cursor < self.table_editor_display_position:
+            self.table_editor_display_position = self.table_editor_cursor
+        elif self.table_editor_cursor > self.table_editor_display_position + visible_chars:
+            self.table_editor_display_position = self.table_editor_cursor - visible_chars
+
+    def _refresh_table_editor_preview(self):
+        row, col = self.cursor_row, self.cursor_col
+        self.table_editor_text = self._cell_preview_text(row, col)
+        self.table_editor_cursor = 0
+        self.table_editor_display_position = 0
+        self._sync_table_editor_view(prefer_end=False)
+
+    def _enter_sheet_edit(self):
+        self.sheet_edit_mode = True
+        self.table_editor_text = self._cell_edit_text(self.cursor_row, self.cursor_col)
+        self.table_editor_display_position = 0
+        self._sync_table_editor_view(prefer_end=True)
+
     def _prepare_eval_globals(self):
         calculate_app._ensure_functions_loaded()
         self._eval_safe_globals = dict(calculate_app.SAFE_GLOBALS)
@@ -529,6 +627,223 @@ class _SpreadsheetApp:
     def _expression_code(self, spec):
         return compile(str(spec.get("expression") or ""), "<sheet_formula>", "eval")
 
+    def _reference_target(self, name, current_row):
+        token = str(name or "").strip()
+        if token == "":
+            return None
+
+        upper = token.upper()
+        source_col = self._column_index_from_label(upper)
+        if source_col is not None:
+            return {
+                "name": token,
+                "kind": "column",
+                "row": int(current_row),
+                "col": source_col,
+            }
+
+        split_index = 0
+        while split_index < len(upper) and upper[split_index].isalpha():
+            split_index += 1
+        if split_index <= 0 or split_index >= len(upper):
+            return None
+
+        row_text = upper[split_index:]
+        if not row_text.isdigit():
+            return None
+
+        source_col = self._column_index_from_label(upper[:split_index])
+        if source_col is None:
+            return None
+
+        row_number = int(row_text)
+        if row_number <= 0 or row_number > ROW_COUNT:
+            return None
+
+        return {
+            "name": token,
+            "kind": "cell",
+            "row": row_number - 1,
+            "col": source_col,
+        }
+
+    def _expression_dependencies(self, spec, current_row):
+        try:
+            names = tuple(self._expression_code(spec).co_names)
+        except Exception:
+            names = ()
+
+        dependencies = []
+        seen_names = []
+        for name in names:
+            if name in seen_names:
+                continue
+            target = self._reference_target(name, current_row)
+            if target is None:
+                continue
+            dependencies.append(target)
+            seen_names.append(name)
+        return dependencies
+
+    def _expression_uses_relative_refs(self, spec):
+        for target in self._expression_dependencies(spec, 0):
+            if target["kind"] == "column":
+                return True
+        return False
+
+    def _formula_validation_scope(self, target_col, spec):
+        locals_scope = {}
+        for target in self._expression_dependencies(spec, 0):
+            if target["col"] == target_col:
+                raise ValueError("Formula cannot use its own column")
+            if target["kind"] == "column":
+                locals_scope[target["name"]] = float(target["col"] + 2)
+            else:
+                locals_scope[target["name"]] = float(((target["row"] + 1) * 100) + target["col"] + 2)
+        return locals_scope
+
+    def _validate_formula_spec(self, target_col, spec):
+        self._prepare_eval_globals()
+        spec = self._normalize_formula(spec)
+        if spec is None:
+            raise ValueError("Formula is empty")
+
+        spec_type = str(spec.get("type") or "")
+        if spec_type == "function":
+            arg_columns = [int(value) for value in (spec.get("arg_columns") or [])]
+            if target_col in arg_columns:
+                raise ValueError("Formula cannot use its own column")
+            fn = self._function_callable(spec)
+            value = fn(*[float(index + 2) for index in range(len(arg_columns))])
+        else:
+            value = eval(
+                self._expression_code(spec),
+                self._eval_safe_globals,
+                self._formula_validation_scope(target_col, spec),
+            )
+
+        if isinstance(value, bool):
+            value = float(value)
+        if not isinstance(value, (int, float)):
+            raise ValueError("Formula must return a number")
+        return spec
+
+    def _parse_function_formula(self, target_col, text_value):
+        text_value = str(text_value or "").strip()
+        if text_value == "" or not text_value.endswith(")"):
+            return None
+
+        open_paren = text_value.find("(")
+        if open_paren <= 0:
+            return None
+
+        name = text_value[:open_paren].strip()
+        function_row = get_function(name)
+        if function_row is None:
+            return None
+
+        inner_text = text_value[open_paren + 1 : -1].strip()
+        args = [] if inner_text == "" else [part.strip() for part in inner_text.split(",")]
+        variables = list(function_row.get("variables") or [])
+        if len(args) != len(variables):
+            return None
+
+        arg_columns = []
+        for arg in args:
+            source_col = self._column_index_from_label(arg)
+            if source_col is None:
+                return None
+            arg_columns.append(source_col)
+
+        return {
+            "type": "function",
+            "scope": "default" if str(function_row.get("scope") or "") == "default" else "user",
+            "name": str(function_row.get("name") or name),
+            "arg_columns": arg_columns,
+        }
+
+    def _parse_formula_input(self, col_index, text_value):
+        formula_text = str(text_value or "").strip()
+        if formula_text.startswith("="):
+            formula_text = formula_text[1:].strip()
+        if formula_text == "":
+            raise ValueError("Formula is empty")
+
+        function_spec = self._parse_function_formula(col_index, formula_text)
+        if function_spec is not None:
+            return self._validate_formula_spec(col_index, function_spec)
+
+        return self._validate_formula_spec(
+            col_index,
+            {
+                "type": "expression",
+                "expression": normalize_expression(formula_text),
+            },
+        )
+
+    def _clear_formula_column(self, col_index):
+        if col_index < 0 or col_index >= COLUMN_COUNT:
+            return
+        self.column_formulas[col_index] = None
+        for row_index in range(ROW_COUNT):
+            self.rows[row_index][col_index] = ""
+
+    def _save_sheet_input(self):
+        row, col = self._active_cell()
+        text_value = str(self.table_editor_text or "")
+        saving_formula = self.column_formulas[col] is not None or text_value.strip().startswith("=")
+
+        if saving_formula:
+            stripped = text_value.strip()
+            if self.column_formulas[col] is not None and stripped in ("", "="):
+                self._clear_formula_column(col)
+            else:
+                try:
+                    self.column_formulas[col] = self._parse_formula_input(col, text_value)
+                except Exception as exc:
+                    self._set_message("Invalid Formula", str(exc), return_view=VIEW_SHEET)
+                    return False
+        else:
+            self.rows[row][col] = text_value.rstrip()
+
+        self.sheet_edit_mode = False
+        self.cursor_row = row
+        self.cursor_col = col
+        self._refresh_table_editor_preview()
+        self._mark_state_dirty()
+        return True
+
+    def _handle_sheet_edit_input(self, token):
+        token = normalize_pi_token(token)
+        text_value = str(self.table_editor_text or "")
+
+        if token == "nav_l":
+            self.table_editor_cursor = max(0, self.table_editor_cursor - 1)
+        elif token == "nav_r":
+            self.table_editor_cursor = min(len(text_value), self.table_editor_cursor + 1)
+        elif token == "nav_u":
+            self.table_editor_cursor = 0
+        elif token == "nav_d":
+            self.table_editor_cursor = len(text_value)
+        elif token == "nav_b":
+            if self.table_editor_cursor > 0:
+                self.table_editor_text = (
+                    text_value[: self.table_editor_cursor - 1] + text_value[self.table_editor_cursor :]
+                )
+                self.table_editor_cursor -= 1
+        elif token == "AC":
+            self.table_editor_text = ""
+            self.table_editor_cursor = 0
+            self.table_editor_display_position = 0
+        elif token not in ("", "toolbox"):
+            insert_text = str(token or "")
+            self.table_editor_text = (
+                text_value[: self.table_editor_cursor] + insert_text + text_value[self.table_editor_cursor :]
+            )
+            self.table_editor_cursor += len(insert_text)
+
+        self._sync_table_editor_view(prefer_end=False)
+
     def _numeric_cell_value(self, row_index, col_index, cache, active):
         cache_key = (row_index, col_index)
         if cache_key in cache:
@@ -542,26 +857,28 @@ class _SpreadsheetApp:
             cache[cache_key] = value
             return value
 
-        if not self._row_has_manual_data(row_index, exclude_col=col_index):
-            raise ValueError("Blank row")
-
         active.add(cache_key)
         try:
             spec_type = str(spec.get("type") or "")
             if spec_type == "function":
+                if not self._row_has_manual_data(row_index, exclude_col=col_index):
+                    raise ValueError("Blank row")
                 fn = self._function_callable(spec)
                 args = []
                 for source_col in spec.get("arg_columns") or []:
                     args.append(self._numeric_cell_value(row_index, int(source_col), cache, active))
                 value = fn(*args)
             else:
+                if self._expression_uses_relative_refs(spec) and not self._row_has_manual_data(
+                    row_index,
+                    exclude_col=col_index,
+                ):
+                    raise ValueError("Blank row")
                 locals_scope = {}
-                for source_col in range(COLUMN_COUNT):
-                    if source_col == col_index:
-                        continue
-                    locals_scope[self._column_label(source_col)] = self._numeric_cell_value(
-                        row_index,
-                        source_col,
+                for target in self._expression_dependencies(spec, row_index):
+                    locals_scope[target["name"]] = self._numeric_cell_value(
+                        target["row"],
+                        target["col"],
                         cache,
                         active,
                     )
@@ -588,7 +905,13 @@ class _SpreadsheetApp:
         if not isinstance(spec, dict):
             return str(self.rows[row_index][col_index] or "")
 
-        if not self._row_has_manual_data(row_index, exclude_col=col_index):
+        spec_type = str(spec.get("type") or "")
+        if spec_type == "function" and not self._row_has_manual_data(row_index, exclude_col=col_index):
+            return ""
+        if spec_type != "function" and self._expression_uses_relative_refs(spec) and not self._row_has_manual_data(
+            row_index,
+            exclude_col=col_index,
+        ):
             return ""
 
         try:
@@ -613,7 +936,7 @@ class _SpreadsheetApp:
     def _configure_sheet_form(self):
         form.ui_style = "table"
         form.focus_inputs_only = False
-        form.blink_cursor = True
+        form.blink_cursor = False
         form.title = ""
         form.configure_table(
             headers=self._header_labels(),
@@ -624,7 +947,7 @@ class _SpreadsheetApp:
             input_cols=INPUT_COLS,
             row_header_w=ROW_HEADER_W,
             show_scrollbars=True,
-            button_text="Tool",
+            button_text="OK",
             show_button=True,
         )
         form.table_row_labels = []
@@ -635,6 +958,7 @@ class _SpreadsheetApp:
         form.table_cursor_col = self.cursor_col
         if hasattr(form, "_sync_table_view"):
             form._sync_table_view()
+        self._refresh_table_editor_preview()
 
     def _render_sheet(self, force=False):
         set_active_view("form")
@@ -656,7 +980,7 @@ class _SpreadsheetApp:
             form.table_row_label_provider = self._row_header_label
             form.table_row_header_title = "#"
             form.table_show_button = True
-            form.table_button_text = "Tool"
+            form.table_button_text = "OK"
 
         if hasattr(form, "_sync_table_view"):
             form._sync_table_view()
@@ -677,8 +1001,13 @@ class _SpreadsheetApp:
 
         self.cursor_row = max(0, min(int(getattr(form, "table_cursor_row", self.cursor_row) or 0), ROW_COUNT - 1))
         self.cursor_col = max(0, min(int(getattr(form, "table_cursor_col", self.cursor_col) or 0), COLUMN_COUNT - 1))
+        if not self.sheet_edit_mode:
+            self._refresh_table_editor_preview()
         form.table_active_label = self._cell_ref(self.cursor_row, self.cursor_col)
-        form.blink_cursor = self.column_formulas[self.cursor_col] is None
+        form.blink_cursor = self.sheet_edit_mode
+        form.table_editor_text = self.table_editor_text
+        form.table_editor_cursor = self.table_editor_cursor
+        form.table_editor_display_position = self.table_editor_display_position
         form_refresh.refresh(state=nav.current_state(), force=force)
 
     def _idle_sheet(self):
@@ -945,6 +1274,8 @@ class _SpreadsheetApp:
             "name": self.selected_function_name,
             "arg_columns": list(self.arg_sources),
         }
+        self.sheet_edit_mode = False
+        self._refresh_table_editor_preview()
         self._mark_state_dirty()
         self.view = VIEW_SHEET
         self.render(force=True)
@@ -955,24 +1286,22 @@ class _SpreadsheetApp:
             self._set_message("Invalid Formula", "Expression is incomplete", return_view=VIEW_EXPR)
             return
 
-        self._prepare_eval_globals()
-        locals_scope = {}
-        for source_col in range(COLUMN_COUNT):
-            if source_col == self.editor_target_col:
-                continue
-            locals_scope[self._column_label(source_col)] = float(source_col + 2)
-
         try:
-            eval(expression, self._eval_safe_globals, locals_scope)
+            spec = self._validate_formula_spec(
+                self.editor_target_col,
+                {
+                    "type": "expression",
+                    "expression": normalize_expression(expression),
+                },
+            )
         except Exception as exc:
             self._set_message("Invalid Formula", str(exc), return_view=VIEW_EXPR)
             return
 
-        self.column_formulas[self.editor_target_col] = {
-            "type": "expression",
-            "expression": expression,
-            "expression_state": calculate_app._serialize_slot(self.editor.root),
-        }
+        spec["expression_state"] = calculate_app._serialize_slot(self.editor.root)
+        self.column_formulas[self.editor_target_col] = spec
+        self.sheet_edit_mode = False
+        self._refresh_table_editor_preview()
         self._mark_state_dirty()
         self.editor = None
         self.view = VIEW_SHEET
@@ -980,7 +1309,9 @@ class _SpreadsheetApp:
 
     def _clear_active_formula(self):
         _row, col = self._active_cell()
-        self.column_formulas[col] = None
+        self._clear_formula_column(col)
+        self.sheet_edit_mode = False
+        self._refresh_table_editor_preview()
         self._mark_state_dirty()
         self.view = VIEW_SHEET
         self.render(force=True)
@@ -1067,6 +1398,9 @@ class _SpreadsheetApp:
             return True
 
         if token == "toolbox":
+            if self.sheet_edit_mode:
+                self.render(force=True)
+                return True
             _row, col = self._active_cell()
             self.editor_target_col = col
             self.toolbox_index = 0
@@ -1074,12 +1408,23 @@ class _SpreadsheetApp:
             self.render()
             return True
 
-        editable = self.column_formulas[self._active_cell()[1]] is None
-        if editable or token in ("nav_u", "nav_d", "nav_l", "nav_r"):
+        if token in ("ok", "exe"):
+            if self.sheet_edit_mode:
+                self._save_sheet_input()
+            else:
+                self._enter_sheet_edit()
+            self.render(force=True)
+            return True
+
+        if self.sheet_edit_mode:
+            self._handle_sheet_edit_input(token)
+            self.render(force=True)
+            return True
+
+        if token in ("nav_u", "nav_d", "nav_l", "nav_r"):
             form.update_buffer(token)
             self.cursor_row, self.cursor_col = self._active_cell()
-            if editable and token not in ("nav_u", "nav_d", "nav_l", "nav_r"):
-                self._sync_active_manual_cell()
+            self._refresh_table_editor_preview()
             self.render(force=True)
             return True
 

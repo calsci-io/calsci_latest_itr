@@ -851,7 +851,20 @@ class Tbf:
 
         return _display_text(default_text)
 
-    def _draw_table_grid_cell(self, x, y, width, height, text_value, selected=False, header=False):
+    def _draw_table_grid_cell(
+        self,
+        x,
+        y,
+        width,
+        height,
+        text_value,
+        selected=False,
+        header=False,
+        draw_left=True,
+        draw_top=True,
+        draw_right=False,
+        draw_bottom=False,
+    ):
         x = int(x)
         y = int(y)
         width = max(1, int(width))
@@ -862,13 +875,22 @@ class Tbf:
         else:
             self._fill_rect(x, y, width, height, 0)
             text_color = 1
-        self._rect(x, y, width, height, 1)
+        if draw_top:
+            self.fb.hline(x, y, width, 1)
+        if draw_left:
+            self.fb.vline(x, y, height, 1)
+        if draw_right:
+            self.fb.vline(x + width - 1, y, height, 1)
+        if draw_bottom:
+            self.fb.hline(x, y + height - 1, width, 1)
+        pad_x = 1 if width > 2 else 0
+        pad_y = 1 if height > 2 else 0
         self._draw_text_in_rect(
             text_value,
-            x + 1,
-            y + (0 if header else 1),
-            max(1, width - 2),
-            max(1, height - 2),
+            x + pad_x,
+            y + pad_y,
+            max(1, width - (2 * pad_x)),
+            max(1, height - (2 * pad_y)),
             color=text_color,
             align="center",
         )
@@ -944,9 +966,14 @@ class Tbf:
 
         self._rect(input_x, top_y, input_w, top_h, 1)
         active_key = self.f_b.active_input_key() if hasattr(self.f_b, "active_input_key") else None
+        input_block = {"key": active_key}
+        if hasattr(self.f_b, "table_editor_text"):
+            input_block["raw_value"] = getattr(self.f_b, "table_editor_text", "")
+            input_block["cursor_pos"] = int(getattr(self.f_b, "table_editor_cursor", 0) or 0)
+            input_block["display_pos"] = int(getattr(self.f_b, "table_editor_display_position", 0) or 0)
         editor_text_w = max(8, input_w - 10)
         view = self._input_view(
-            {"key": active_key},
+            input_block,
             True,
             visible_chars=_max_chars_for_width(editor_text_w),
         )
@@ -959,8 +986,8 @@ class Tbf:
             color=1,
             max_width=editor_text_w,
         )
-        if self._cursor_visible:
-            visible_cursor = self.f_b.inp_cursor() - view["display_pos"]
+        if self._blink_enabled() and self._cursor_visible:
+            visible_cursor = view["cursor_pos"] - view["display_pos"]
             if visible_cursor < 0:
                 visible_cursor = 0
             if visible_cursor > view["visible_chars"]:
@@ -1016,6 +1043,10 @@ class Tbf:
                 row_header_title,
                 selected=False,
                 header=True,
+                draw_left=True,
+                draw_top=True,
+                draw_right=True,
+                draw_bottom=False,
             )
 
         for visible_col in range(visible_cols):
@@ -1031,6 +1062,10 @@ class Tbf:
                 headers[global_col] if global_col < len(headers) else "",
                 selected=False,
                 header=True,
+                draw_left=(visible_col > 0 or row_header_w == 0),
+                draw_top=True,
+                draw_right=visible_col == (visible_cols - 1),
+                draw_bottom=False,
             )
 
             for visible_row in range(visible_rows):
@@ -1047,6 +1082,10 @@ class Tbf:
                         self._table_row_label(global_row, selected_col),
                         selected=False,
                         header=False,
+                        draw_left=True,
+                        draw_top=True,
+                        draw_right=True,
+                        draw_bottom=visible_row == (visible_rows - 1),
                     )
                 self._draw_table_grid_cell(
                     cell_x,
@@ -1056,6 +1095,10 @@ class Tbf:
                     self._table_cell_value(global_row, global_col),
                     selected=global_row == selected_row and global_col == selected_col,
                     header=False,
+                    draw_left=(visible_col > 0 or row_header_w == 0),
+                    draw_top=True,
+                    draw_right=visible_col == (visible_cols - 1),
+                    draw_bottom=visible_row == (visible_rows - 1),
                 )
 
         if v_scroll_w > 0:
@@ -1441,12 +1484,17 @@ class Tbf:
 
     def _input_view(self, block, input_active, visible_chars=None):
         key = block.get("key")
-        raw_value = str(self.f_b.inp_list().get(key, " ") or " ")
+        if "raw_value" in block:
+            raw_value = str(block.get("raw_value", "") or "")
+            if raw_value == "":
+                raw_value = " "
+        else:
+            raw_value = str(self.f_b.inp_list().get(key, " ") or " ")
         value_text = raw_value.rstrip()
         visible_chars = max(1, int(visible_chars or self.f_b.inp_cols()))
         if input_active:
-            display_pos = int(self.f_b.inp_display_position())
-            cursor_pos = int(self.f_b.inp_cursor())
+            display_pos = int(block.get("display_pos", self.f_b.inp_display_position()))
+            cursor_pos = int(block.get("cursor_pos", self.f_b.inp_cursor()))
             max_display = max(0, len(value_text) - visible_chars)
             if cursor_pos < display_pos:
                 display_pos = cursor_pos
@@ -1455,10 +1503,12 @@ class Tbf:
             display_pos = min(max(0, display_pos), max_display)
         else:
             display_pos = 0
+            cursor_pos = 0
         visible_text = value_text[display_pos : display_pos + visible_chars]
         has_overflow = len(value_text) > visible_chars
         return {
             "value_text": value_text,
+            "cursor_pos": cursor_pos,
             "display_pos": display_pos,
             "visible_chars": visible_chars,
             "visible_text": visible_text,
@@ -1693,7 +1743,7 @@ class Tbf:
             max_width=text_max_w,
         )
 
-        if input_active and self._cursor_visible:
+        if input_active and self._blink_enabled() and self._cursor_visible:
             visible_cursor = self.f_b.inp_cursor() - view["display_pos"]
             if visible_cursor < 0:
                 visible_cursor = 0
@@ -1790,7 +1840,7 @@ class Tbf:
             max_width=text_max_w,
         )
 
-        if input_active and self._cursor_visible:
+        if input_active and self._blink_enabled() and self._cursor_visible:
             visible_cursor = self.f_b.inp_cursor() - view["display_pos"]
             if visible_cursor < 0:
                 visible_cursor = 0
