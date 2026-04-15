@@ -17,6 +17,11 @@ from data_modules.object_handler import keymap, keypad_state_manager_reset
 from dino_game.game import DinoGame
 from process_modules.navigation import request_navigation_from_key
 
+try:
+    import sim_ui  # type: ignore
+except Exception:
+    sim_ui = None
+
 
 _ROWS = [14, 21, 47, 48, 38, 39, 40, 41, 42, 1]
 _COLS = [8, 18, 17, 15, 7]
@@ -47,14 +52,28 @@ def _scan_key():
 
 def _read_input():
     key = _scan_key()
+    duck_pressed = False
     if key is None:
-        return False, False, False
+        if sim_ui is not None:
+            try:
+                duck_pressed = bool(sim_ui.is_key_active(DUCK_KEY))
+            except Exception:
+                duck_pressed = False
+        return False, duck_pressed, False
 
     key_name = keymap.key_out(col=int(key[0]), row=int(key[1]))
     if key_name in NAVIGATION_KEYS:
         request_navigation_from_key(key_name)
 
-    return key_name == JUMP_KEY, key_name == DUCK_KEY, False
+    if key_name == DUCK_KEY:
+        duck_pressed = True
+    elif sim_ui is not None:
+        try:
+            duck_pressed = bool(sim_ui.is_key_active(DUCK_KEY))
+        except Exception:
+            duck_pressed = False
+
+    return key_name == JUMP_KEY, duck_pressed, False
 
 
 def dino():

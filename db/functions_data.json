@@ -1,10 +1,1 @@
-{
-  "_default": {
-    "1": {
-      "variables": ["r"],
-      "name": "circle_area",
-      "expression": "pi * r**2",
-      "scope": "default"
-    }
-  }
-}
+{"_default": {"1": {"variables": ["r"], "name": "circle_area", "expression": "pi * r**2", "scope": "default"}, "2": {"name": "rect_area", "variables": ["length", "breadth"], "expression": "length*breadth", "scope": "user", "expression_state": {"items": [{"kind": "token", "text": "length"}, {"kind": "token", "text": "*"}, {"kind": "token", "text": "breadth"}]}}, "3": {"name": "T_AREA", "variables": ["BASE", "HEIGHT"], "expression": "((1)/(2))*BASE*HEIGHT", "scope": "user", "expression_state": {"items": [{"kind": "fraction", "numerator": {"items": [{"kind": "token", "text": "1"}]}, "denominator": {"items": [{"kind": "token", "text": "2"}]}}, {"kind": "token", "text": "*"}, {"kind": "token", "text": "BASE"}, {"kind": "token", "text": "*"}, {"kind": "token", "text": "HEIGHT"}]}}}}
